@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Node (for future React UI)
+node_modules/
+dist/

@@ -1,0 +1,3 @@
+device_id: "device3"
+network:
+  api_port: 8003
