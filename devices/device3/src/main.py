@@ -1,23 +1,38 @@
 import argparse
+
 import uvicorn
 
-from infra.config import load_config
-from domain.controller import DeviceController
+from infra.config import load_config, DeviceConfig
 from interfaces.api import create_app
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True)
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="WARP Device backend")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="config/device3.yaml",
+        help="Path to YAML configuration file",
+    )
     return parser.parse_args()
 
-def main():
+
+def main() -> None:
     args = parse_args()
-    cfg = load_config(args.config)
 
-    controller = DeviceController(device_id=cfg["device_id"])
-    app = create_app(controller)
+    # Load configuration (returns DeviceConfig)
+    cfg: DeviceConfig = load_config(args.config)
 
-    uvicorn.run(app, host="0.0.0.0", port=cfg["network"]["api_port"])
+    # Build FastAPI app
+    app = create_app(config=cfg, config_path=args.config)
+
+    # Run Uvicorn server
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=cfg.network.api_port,
+    )
+
 
 if __name__ == "__main__":
     main()
