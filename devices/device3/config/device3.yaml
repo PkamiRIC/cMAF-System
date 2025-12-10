@@ -1,3 +1,22 @@
 device_id: "device3"
 network:
   api_port: 8003
+relay:
+  port: "/dev/ttySC3"
+  address: 2
+  baudrate: 9600
+  parity: "N"
+  timeout: 0.3
+rotary:
+  port: "/dev/ttySC3"
+  address: 1
+  baudrate: 9600
+  parity: "N"
+  timeout: 0.3
+syringe:
+  port: "/dev/ttySC3"
+  address: 76
+  baudrate: 9600
+  steps_per_ml: 8000000
+  velocity_calib: 8000
+  timeout: 1.0

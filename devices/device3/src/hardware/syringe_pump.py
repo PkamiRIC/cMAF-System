@@ -1,0 +1,233 @@
+import struct
+import time
+from typing import Optional
+
+import serial
+
+from infra.config import SyringeConfig
+
+
+class SyringePump:
+    def __init__(self, config: SyringeConfig) -> None:
+        self.config = config
+        self.target_position = 0
+
+    def _open_serial(self, timeout: Optional[float] = None) -> serial.Serial:
+        return serial.Serial(
+            port=self.config.port,
+            baudrate=self.config.baudrate,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_ONE,
+            bytesize=serial.EIGHTBITS,
+            timeout=self.config.timeout if timeout is None else timeout,
+        )
+
+    @staticmethod
+    def _crc16(command_bytes) -> bytes:
+        crc = 0xFFFF
+        for b in command_bytes:
+            crc ^= b
+            for _ in range(8):
+                if crc & 0x01:
+                    crc = (crc >> 1) ^ 0xA001
+                else:
+                    crc >>= 1
+        return struct.pack("<H", crc)
+
+    def _steps_from_volume(self, volume_ml: float) -> int:
+        return int(volume_ml * self.config.steps_per_ml)
+
+    @staticmethod
+    def _int_to_4byte_big_endian(val: int) -> bytes:
+        return val.to_bytes(4, byteorder="big", signed=True)
+
+    def _build_command(self, volume_ml: float, flow_rate_ml_per_min: float) -> bytes:
+        flow_rate_ml_per_min = max(min(flow_rate_ml_per_min, 15), -15)
+
+        if abs(volume_ml) > 180:
+            raise ValueError("Volume must not exceed 180 mL")
+
+        velocity_decimal = int(self.config.velocity_calib * flow_rate_ml_per_min)
+        steps = self._steps_from_volume(volume_ml)
+        self.target_position = steps
+
+        base_command = bytearray(
+            [
+                self.config.address,
+                0x10,
+                0xA7,
+                0x9E,
+                0x00,
+                0x07,
+                0x0E,
+                0x01,
+                0x00,
+                0x00,
+                0x03,
+                0x03,
+                0xE8,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+            ]
+        )
+
+        velocity_bytes = self._int_to_4byte_big_endian(velocity_decimal)
+        steps_bytes = self._int_to_4byte_big_endian(steps)
+        base_command[13:17] = velocity_bytes
+        base_command[17:21] = steps_bytes
+
+        crc = self._crc16(base_command)
+        return base_command + crc
+
+    def _send_command(self, command: bytes) -> bytes:
+        with self._open_serial(timeout=0.5) as ser:
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+            ser.flush()
+            ser.write(command)
+            time.sleep(0.5)
+            return ser.read(30)
+
+    # Public API -------------------------------------------------
+    def goto_absolute(self, volume_ml: float, flow_rate_ml_min: float) -> None:
+        """Move plunger to absolute volume target."""
+        command = self._build_command(volume_ml, flow_rate_ml_min)
+        self._send_command(command)
+
+    def move(self, volume_ml: float, flow_rate_ml_min: float) -> None:
+        """Alias kept for compatibility with the old GUI code."""
+        self.goto_absolute(volume_ml, flow_rate_ml_min)
+
+    def read_status(self, max_tries: int = 5) -> Optional[dict]:
+        """
+        Query DDS5 status & live data.
+        Returns a dict or None if communication fails.
+        """
+        poll = bytearray([self.config.address, 0x03, 0xA7, 0x3A, 0x00, 0x07])
+        poll += self._crc16(poll)
+
+        tries = 0
+        while tries < max_tries:
+            tries += 1
+            try:
+                with self._open_serial(timeout=2.0) as ser:
+                    ser.reset_input_buffer()
+                    ser.reset_output_buffer()
+                    ser.flush()
+                    ser.write(poll)
+                    time.sleep(0.2)
+                    resp = ser.read(19)
+            except Exception:
+                time.sleep(0.2)
+                continue
+
+            if len(resp) != 19:
+                time.sleep(0.2)
+                continue
+            if resp[0] != self.config.address or resp[1] != 0x03 or resp[2] != 0x0E:
+                time.sleep(0.2)
+                continue
+            if self._crc16(resp[:-2]) != resp[-2:]:
+                time.sleep(0.2)
+                continue
+
+            sdw = int.from_bytes(resp[3:7], "big")
+            busy = (sdw >> 8) & 1
+            standstill = (sdw >> 12) & 1
+            vel_ok = (sdw >> 14) & 1
+            pos_ok = (sdw >> 15) & 1
+            mode = (sdw >> 24) & 0b111
+
+            actual_velocity = int.from_bytes(resp[9:13], "big", signed=True)
+            actual_position = int.from_bytes(resp[13:17], "big", signed=True)
+
+            volume_ml = actual_position / self.config.steps_per_ml
+            flow_ml_min = round(actual_velocity / self.config.velocity_calib, 4)
+
+            return {
+                "sdw": sdw,
+                "mode": mode,
+                "busy": busy,
+                "standstill": standstill,
+                "vel_ok": vel_ok,
+                "pos_ok": pos_ok,
+                "actual_velocity": actual_velocity,
+                "actual_position": actual_position,
+                "volume_ml": volume_ml,
+                "flow_ml_min": flow_ml_min,
+            }
+
+        return None
+
+    def wait_until_idle(self, timeout: Optional[float] = None) -> bool:
+        start_time = time.time()
+        while True:
+            status = self.read_status()
+            if status is None:
+                time.sleep(0.5)
+                continue
+            if status["busy"] == 0:
+                return True
+            if timeout is not None and (time.time() - start_time) >= timeout:
+                return False
+            time.sleep(0.5)
+
+    def home(self) -> None:
+        """Send homing frames and wait until the pump reports idle."""
+
+        def _make_home_cmd(flag_byte: int) -> bytes:
+            frame = bytearray(
+                [
+                    self.config.address,
+                    0x10,
+                    0xA7,
+                    0x9E,
+                    0x00,
+                    0x07,
+                    0x0E,
+                    0x07,
+                    0x00,
+                    flag_byte,
+                    0x03,
+                    0x01,
+                    0xF4,
+                    0x00,
+                    0x00,
+                    0x03,
+                    0xE8,
+                    0x00,
+                    0x00,
+                    0x27,
+                    0x10,
+                ]
+            )
+            frame += self._crc16(frame)
+            return frame
+
+        cmd1 = _make_home_cmd(0x00)
+        cmd2 = _make_home_cmd(0x02)
+
+        try:
+            with self._open_serial(timeout=1.0) as ser:
+                ser.reset_input_buffer()
+                ser.reset_output_buffer()
+
+                ser.write(cmd1)
+                ser.flush()
+                time.sleep(0.2)
+                ser.read(8)
+
+                ser.write(cmd2)
+                ser.flush()
+                time.sleep(0.2)
+                ser.read(8)
+        except Exception:
+            return
+
+        self.wait_until_idle(timeout=60)
