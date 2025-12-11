@@ -3,6 +3,7 @@ import json
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -19,6 +20,13 @@ def create_app(config: DeviceConfig, config_path: str):
     controller = DeviceController(config)
 
     app = FastAPI()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     controller.attach_event_loop(asyncio.get_event_loop())
 
     @app.get("/status")
