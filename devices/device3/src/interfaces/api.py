@@ -34,6 +34,11 @@ def create_app(config: DeviceConfig, config_path: str):
         controller.stop_sequence()
         return {"ok": True}
 
+    @app.post("/command/home")
+    def home():
+        controller.home_all()
+        return {"ok": True}
+
     @app.post("/command/emergency_stop")
     def emergency():
         controller.emergency_stop()

@@ -4,11 +4,11 @@ from typing import Optional
 
 import serial
 
-from infra.config import SyringeConfig
+from infra.config import SyringeConfig, AxisConfig
 
 
 class SyringePump:
-    def __init__(self, config: SyringeConfig) -> None:
+    def __init__(self, config: SyringeConfig | AxisConfig) -> None:
         self.config = config
         self.target_position = 0
 

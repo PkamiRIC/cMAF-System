@@ -6,6 +6,7 @@ from hardware.plc_io import PlcIo
 from hardware.relay_board import RelayBoard
 from hardware.rotary_valve import RotaryValve
 from hardware.syringe_pump import SyringePump
+from hardware.axis_driver import AxisDriver
 from infra.config import DeviceConfig
 from domain.sequences import run_maf_sampling_sequence, run_sequence2
 
@@ -29,10 +30,20 @@ class DeviceController:
         self.relays = RelayBoard(config.relay)
         self.rotary = RotaryValve(config.rotary)
         self.syringe = SyringePump(config.syringe)
+        self.vertical_axis = AxisDriver(config.vertical_axis, "Vertical Axis")
+        self.horizontal_axis = AxisDriver(config.horizontal_axis, "Horizontal Axis")
         self.state = DeviceState()
         self._stop_event = threading.Event()
         self._sequence_thread: Optional[threading.Thread] = None
         self._state_lock = threading.Lock()
+
+        # Best-effort initial connections for axes
+        try:
+            self.vertical_axis.connect()
+            self.horizontal_axis.connect()
+        except Exception:
+            # Leave drivers unready; homing will fail with a clear message
+            pass
 
     # ---------------------------------------------------
     # STATUS
@@ -84,6 +95,51 @@ class DeviceController:
 
     def move_syringe(self, volume_ml: float, flow_ml_min: float) -> None:
         self.syringe.goto_absolute(volume_ml, flow_ml_min)
+
+    def home_all(self) -> None:
+        """
+        Homing routine mirroring the old GUI's Initialize button:
+        1) Make outputs safe (relays off)
+        2) Home vertical axis, then horizontal axis
+        3) Home syringe pump
+        """
+        if self._sequence_thread and self._sequence_thread.is_alive():
+            raise RuntimeError("Cannot home while a sequence is running")
+
+        with self._state_lock:
+            self.state.state = "RUNNING"
+            self.state.current_sequence = "homing"
+            self.state.last_error = None
+            self.state.stop_requested = False
+            self.state.sequence_step = "Preparing outputs"
+
+        try:
+            self._stop_event.clear()
+            self._prepare_outputs_for_homing()
+
+            self._before_step("Homing vertical axis")
+            self._home_vertical_axis()
+
+            self._before_step("Homing horizontal axis")
+            self._home_horizontal_axis()
+
+            self._before_step("Homing syringe pump")
+            self.syringe.home()
+
+            with self._state_lock:
+                self.state.state = "IDLE"
+                self.state.last_error = None
+        except Exception as exc:
+            with self._state_lock:
+                self.state.state = "ERROR"
+                self.state.last_error = str(exc)
+            raise
+        finally:
+            with self._state_lock:
+                self.state.current_sequence = None
+                self.state.sequence_step = None
+                self.state.stop_requested = False
+            self._stop_event.clear()
 
     # ---------------------------------------------------
     # Internals
@@ -152,3 +208,38 @@ class DeviceController:
             raise RuntimeError(f"Action '{label}' not wired to backend yet")
 
         return _fn
+
+    def _prepare_outputs_for_homing(self) -> None:
+        """Best-effort: switch off relays before moving axes."""
+        try:
+            for ch in range(1, 9):
+                self.relays.off(ch)
+        except Exception:
+            # Keep going even if one relay write fails
+            pass
+
+    def _home_vertical_axis(self) -> None:
+        """
+        Placeholder to be wired to the real vertical axis driver.
+        Replace this implementation with your motion controller call,
+        e.g., vertical_driver.home_blocking().
+        """
+        if not self.vertical_axis.ready:
+            try:
+                self.vertical_axis.connect()
+            except Exception as exc:
+                raise RuntimeError(f"Vertical axis unavailable: {exc}")
+        self.vertical_axis.home()
+
+    def _home_horizontal_axis(self) -> None:
+        """
+        Placeholder to be wired to the real horizontal axis driver.
+        Replace this implementation with your motion controller call,
+        e.g., horizontal_driver.home_blocking().
+        """
+        if not self.horizontal_axis.ready:
+            try:
+                self.horizontal_axis.connect()
+            except Exception as exc:
+                raise RuntimeError(f"Horizontal axis unavailable: {exc}")
+        self.horizontal_axis.home()

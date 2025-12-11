@@ -20,3 +20,21 @@ syringe:
   steps_per_ml: 8000000
   velocity_calib: 8000
   timeout: 1.0
+vertical_axis:
+  port: "/dev/ttySC3"
+  address: 78        # 0x4E
+  steps_per_ml: 2000
+  velocity_calib: 1000
+  steps_per_mm: 2000
+  min_mm: 0
+  max_mm: 33
+  timeout: 1.0
+horizontal_axis:
+  port: "/dev/ttySC3"
+  address: 77        # 0x4D
+  steps_per_ml: 2000
+  velocity_calib: 1000
+  steps_per_mm: 2000
+  min_mm: 0
+  max_mm: null       # no hard max in old config
+  timeout: 1.0
