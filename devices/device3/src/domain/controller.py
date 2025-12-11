@@ -21,6 +21,9 @@ class DeviceState:
     total_volume_l: float = 0.0
     last_error: Optional[str] = None
     stop_requested: bool = False
+    relay_states: dict = field(default_factory=dict)
+    rotary_port: Optional[int] = None
+    logs: list = field(default_factory=list)
 
 
 class DeviceController:
@@ -36,6 +39,12 @@ class DeviceController:
         self._stop_event = threading.Event()
         self._sequence_thread: Optional[threading.Thread] = None
         self._state_lock = threading.Lock()
+        self._log_lock = threading.Lock()
+        self._log_buffer: list[str] = []
+
+        # Relay/rotary caches for UI feedback
+        self.relay_states = {ch: False for ch in range(1, 9)}
+        self.rotary_port: Optional[int] = None
 
         # Best-effort initial connections for axes
         try:
@@ -53,6 +62,10 @@ class DeviceController:
             self.state.pressure_bar = self.io.read_pressure()
             self.state.flow_lpm = self.io.read_flow()
             self.state.total_volume_l = self.io.read_volume()
+            # update cached UI fields
+            self.state.relay_states = dict(self.relay_states)
+            self.state.rotary_port = self.rotary_port
+            self.state.logs = list(self._log_buffer)
             return {"device_id": self.config.device_id, **asdict(self.state)}
 
     # ---------------------------------------------------
@@ -67,6 +80,7 @@ class DeviceController:
             self.state.current_sequence = sequence_name
             self.state.last_error = None
             self.state.stop_requested = False
+            self.state.sequence_step = None
 
         self._stop_event.clear()
         self._sequence_thread = threading.Thread(
@@ -92,12 +106,16 @@ class DeviceController:
             self.state.last_error = "Emergency stop activated"
 
     def set_relay(self, channel: int, enabled: bool) -> bool:
-        return self.relays.on(channel) if enabled else self.relays.off(channel)
+        self._ensure_manual_allowed()
+        return self._set_relay(channel, enabled, allow_when_running=False)
 
     def set_rotary_port(self, port: int) -> bool:
-        return self.rotary.set_port(port)
+        self._ensure_manual_allowed()
+        return self._set_rotary_port(port, allow_when_running=False)
 
     def move_syringe(self, volume_ml: float, flow_ml_min: float) -> None:
+        self._ensure_manual_allowed()
+        self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")
         self.syringe.goto_absolute(volume_ml, flow_ml_min)
 
     def home_all(self) -> None:
@@ -124,16 +142,17 @@ class DeviceController:
     # ---------------------------------------------------
     def _run_sequence(self, sequence_name: str) -> None:
         try:
+            relay_adapter = _RelayAdapter(self, self._stop_event)
             if sequence_name.lower() in {"sequence1", "maf_sampling", "maf"}:
                 self._execute_sequence(
                     lambda: run_maf_sampling_sequence(
                         stop_flag=self._stop_event.is_set,
                         log=self._log,
-                        relays=self.relays,
+                        relays=relay_adapter,
                         syringe=self.syringe,
                         move_horizontal_to_filtering=self._not_wired("move_horizontal_to_filtering"),
                         move_vertical_close_plate=self._not_wired("move_vertical_close_plate"),
-                        select_rotary_port=self.rotary.set_port,
+                        select_rotary_port=lambda p: self._set_rotary_port(p, allow_when_running=True),
                         before_step=self._before_step,
                         init=self._not_wired("init_homing"),
                     )
@@ -143,13 +162,13 @@ class DeviceController:
                     lambda: run_sequence2(
                         stop_flag=self._stop_event.is_set,
                         log=self._log,
-                        relays=self.relays,
+                        relays=relay_adapter,
                         syringe=self.syringe,
                         move_horizontal_to_filtering=self._not_wired("move_horizontal_to_filtering"),
                         move_horizontal_home=self._not_wired("move_horizontal_home"),
                         move_vertical_close_plate=self._not_wired("move_vertical_close_plate"),
                         move_vertical_open_plate=self._not_wired("move_vertical_open_plate"),
-                        select_rotary_port=self.rotary.set_port,
+                        select_rotary_port=lambda p: self._set_rotary_port(p, allow_when_running=True),
                         before_step=self._before_step,
                     )
                 )
@@ -176,10 +195,17 @@ class DeviceController:
     def _before_step(self, step_label: str) -> None:
         with self._state_lock:
             self.state.sequence_step = step_label
+        self._append_log(step_label)
 
     def _log(self, message: str) -> None:
-        # Placeholder logging hook for future persistence/log streaming
+        self._append_log(message)
         print(message)
+
+    def _append_log(self, message: str) -> None:
+        with self._log_lock:
+            self._log_buffer.append(message)
+            if len(self._log_buffer) > 100:
+                self._log_buffer = self._log_buffer[-100:]
 
     def _not_wired(self, label: str) -> Callable[[], None]:
         def _fn():
@@ -275,3 +301,45 @@ class DeviceController:
             return self.vertical_axis.read_position_mm()
         except Exception:
             return None
+
+    def _set_relay(self, channel: int, enabled: bool, allow_when_running: bool) -> bool:
+        if self.state.state == "RUNNING" and not allow_when_running:
+            raise RuntimeError("Relays locked while a sequence is running")
+        ok = self.relays.on(channel) if enabled else self.relays.off(channel)
+        if ok:
+            self.relay_states[channel] = enabled
+            with self._state_lock:
+                self.state.relay_states = dict(self.relay_states)
+        return ok
+
+    def _set_rotary_port(self, port: int, allow_when_running: bool) -> bool:
+        if self.state.state == "RUNNING" and not allow_when_running:
+            raise RuntimeError("Rotary valve locked while a sequence is running")
+        ok = self.rotary.set_port(port)
+        if ok:
+            self.rotary_port = port
+            with self._state_lock:
+                self.state.rotary_port = port
+        return ok
+
+    def _ensure_manual_allowed(self) -> None:
+        if self.state.state == "RUNNING":
+            raise RuntimeError("Manual control locked while a sequence is running")
+
+
+class _RelayAdapter:
+    """Adapter used by sequences to update relay cache while allowing runs."""
+
+    def __init__(self, controller: DeviceController, stop_event: threading.Event):
+        self.controller = controller
+        self.stop_event = stop_event
+
+    def on(self, channel: int) -> bool:
+        if self.stop_event.is_set():
+            raise RuntimeError("Operation stopped")
+        return self.controller._set_relay(channel, True, allow_when_running=True)
+
+    def off(self, channel: int) -> bool:
+        if self.stop_event.is_set():
+            raise RuntimeError("Operation stopped")
+        return self.controller._set_relay(channel, False, allow_when_running=True)
