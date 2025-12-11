@@ -150,11 +150,11 @@ class DeviceController:
                         log=self._log,
                         relays=relay_adapter,
                         syringe=self.syringe,
-                        move_horizontal_to_filtering=self._not_wired("move_horizontal_to_filtering"),
-                        move_vertical_close_plate=self._not_wired("move_vertical_close_plate"),
+                        move_horizontal_to_filtering=self._noop("move_horizontal_to_filtering"),
+                        move_vertical_close_plate=self._noop("move_vertical_close_plate"),
                         select_rotary_port=lambda p: self._set_rotary_port(p, allow_when_running=True),
                         before_step=self._before_step,
-                        init=self._not_wired("init_homing"),
+                        init=self._noop("init_homing"),
                     )
                 )
             elif sequence_name.lower() in {"sequence2", "seq2"}:
@@ -164,10 +164,10 @@ class DeviceController:
                         log=self._log,
                         relays=relay_adapter,
                         syringe=self.syringe,
-                        move_horizontal_to_filtering=self._not_wired("move_horizontal_to_filtering"),
-                        move_horizontal_home=self._not_wired("move_horizontal_home"),
-                        move_vertical_close_plate=self._not_wired("move_vertical_close_plate"),
-                        move_vertical_open_plate=self._not_wired("move_vertical_open_plate"),
+                        move_horizontal_to_filtering=self._noop("move_horizontal_to_filtering"),
+                        move_horizontal_home=self._noop("move_horizontal_home"),
+                        move_vertical_close_plate=self._noop("move_vertical_close_plate"),
+                        move_vertical_open_plate=self._noop("move_vertical_open_plate"),
                         select_rotary_port=lambda p: self._set_rotary_port(p, allow_when_running=True),
                         before_step=self._before_step,
                     )
@@ -325,6 +325,12 @@ class DeviceController:
     def _ensure_manual_allowed(self) -> None:
         if self.state.state == "RUNNING":
             raise RuntimeError("Manual control locked while a sequence is running")
+
+    def _noop(self, label: str) -> Callable[[], None]:
+        def _fn():
+            self._log(f"[NOOP] {label} (not wired)")
+
+        return _fn
 
 
 class _RelayAdapter:

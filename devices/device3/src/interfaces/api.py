@@ -1,6 +1,9 @@
+import asyncio
+import json
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from domain.controller import DeviceController
@@ -67,5 +70,15 @@ def create_app(config: DeviceConfig, config_path: str):
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
+
+    @app.get("/events/sse")
+    async def sse():
+        async def event_generator():
+            while True:
+                snapshot = controller.get_status()
+                yield f"data: {json.dumps(snapshot)}\n\n"
+                await asyncio.sleep(1.0)
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     return app
