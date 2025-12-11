@@ -2,7 +2,7 @@ device_id: "device3"
 network:
   api_port: 8003
 relay:
-  port: "/dev/ttySC3"
+  port: "/dev/ttySC2"
   address: 2
   baudrate: 9600
   parity: "N"
@@ -14,14 +14,14 @@ rotary:
   parity: "N"
   timeout: 0.3
 syringe:
-  port: "/dev/ttySC3"
+  port: "/dev/ttySC2"
   address: 76
   baudrate: 9600
   steps_per_ml: 8000000
   velocity_calib: 8000
   timeout: 1.0
 vertical_axis:
-  port: "/dev/ttySC3"
+  port: "/dev/ttySC2"
   address: 78        # 0x4E
   steps_per_ml: 2000
   velocity_calib: 1000
@@ -30,7 +30,7 @@ vertical_axis:
   max_mm: 33
   timeout: 1.0
 horizontal_axis:
-  port: "/dev/ttySC3"
+  port: "/dev/ttySC2"
   address: 77        # 0x4D
   steps_per_ml: 2000
   velocity_calib: 1000

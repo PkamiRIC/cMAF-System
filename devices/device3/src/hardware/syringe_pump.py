@@ -13,7 +13,7 @@ class SyringePump:
         self.target_position = 0
 
     def _open_serial(self, timeout: Optional[float] = None) -> serial.Serial:
-        return serial.Serial(
+        ser = serial.Serial(
             port=self.config.port,
             baudrate=self.config.baudrate,
             parity=serial.PARITY_NONE,
@@ -21,6 +21,12 @@ class SyringePump:
             bytesize=serial.EIGHTBITS,
             timeout=self.config.timeout if timeout is None else timeout,
         )
+        try:
+            from serial.rs485 import RS485Settings
+            ser.rs485_mode = RS485Settings(delay_before_tx=0, delay_before_rx=0)
+        except Exception:
+            pass
+        return ser
 
     @staticmethod
     def _crc16(command_bytes) -> bytes:

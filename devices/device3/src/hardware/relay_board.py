@@ -25,7 +25,7 @@ class RelayBoard:
         return struct.pack("<H", crc)
 
     def _open(self) -> serial.Serial:
-        return serial.Serial(
+        ser = serial.Serial(
             port=self.config.port,
             baudrate=self.config.baudrate,
             bytesize=serial.EIGHTBITS,
@@ -33,6 +33,12 @@ class RelayBoard:
             stopbits=serial.STOPBITS_ONE,
             timeout=self.config.timeout,
         )
+        try:
+            from serial.rs485 import RS485Settings
+            ser.rs485_mode = RS485Settings(delay_before_tx=0, delay_before_rx=0)
+        except Exception:
+            pass
+        return ser
 
     def _write_register(self, reg: int, value: int) -> bool:
         hi_reg, lo_reg = (reg >> 8) & 0xFF, reg & 0xFF
