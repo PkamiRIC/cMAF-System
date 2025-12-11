@@ -78,6 +78,10 @@ class DeviceController:
         self._stop_event.set()
         with self._state_lock:
             self.state.stop_requested = True
+            self.state.state = "ERROR"
+            self.state.last_error = "Operation stopped"
+            self.state.current_sequence = None
+            self.state.sequence_step = None
 
     def emergency_stop(self) -> None:
         self.stop_sequence()
@@ -211,7 +215,7 @@ class DeviceController:
 
             self._before_step("Homing syringe pump")
             self._check_stop()
-            self.syringe.home()
+            self.syringe.home(stop_flag=self._stop_event.is_set)
 
             with self._state_lock:
                 self.state.state = "IDLE"

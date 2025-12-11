@@ -181,7 +181,7 @@ class SyringePump:
                 return False
             time.sleep(0.5)
 
-    def home(self) -> None:
+    def home(self, stop_flag: Optional[callable] = None) -> None:
         """Send homing frames and wait until the pump reports idle."""
 
         def _make_home_cmd(flag_byte: int) -> bytes:
@@ -233,4 +233,4 @@ class SyringePump:
         except Exception:
             return
 
-        self.wait_until_idle(timeout=60)
+        self.wait_until_idle(timeout=60, stop_flag=stop_flag)
