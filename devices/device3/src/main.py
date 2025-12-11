@@ -1,6 +1,13 @@
 import argparse
+import sys
+from pathlib import Path
 
 import uvicorn
+
+# Ensure the src package is first on sys.path so we import the updated modules
+SRC_DIR = Path(__file__).resolve().parent
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from infra.config import load_config, DeviceConfig
 from interfaces.api import create_app
