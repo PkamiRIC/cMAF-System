@@ -19,6 +19,7 @@ def create_app(config: DeviceConfig, config_path: str):
     controller = DeviceController(config)
 
     app = FastAPI()
+    controller.attach_event_loop(asyncio.get_event_loop())
 
     @app.get("/status")
     def status():
@@ -73,11 +74,21 @@ def create_app(config: DeviceConfig, config_path: str):
 
     @app.get("/events/sse")
     async def sse():
+        queue: asyncio.Queue = asyncio.Queue()
+        controller._sse_subscribers.append(queue)
+        # push initial status
+        await queue.put(json.dumps(controller.get_status()))
+
         async def event_generator():
-            while True:
-                snapshot = controller.get_status()
-                yield f"data: {json.dumps(snapshot)}\n\n"
-                await asyncio.sleep(1.0)
+            try:
+                while True:
+                    data = await queue.get()
+                    yield f"data: {data}\n\n"
+            finally:
+                try:
+                    controller._sse_subscribers.remove(queue)
+                except ValueError:
+                    pass
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 

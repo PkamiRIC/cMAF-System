@@ -1,4 +1,6 @@
 import threading
+import asyncio
+import json
 from dataclasses import dataclass, field, asdict
 from typing import Callable, Optional
 
@@ -41,6 +43,8 @@ class DeviceController:
         self._state_lock = threading.Lock()
         self._log_lock = threading.Lock()
         self._log_buffer: list[str] = []
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._sse_subscribers: list[asyncio.Queue] = []
 
         # Relay/rotary caches for UI feedback
         self.relay_states = {ch: False for ch in range(1, 9)}
@@ -66,7 +70,11 @@ class DeviceController:
             self.state.relay_states = dict(self.relay_states)
             self.state.rotary_port = self.rotary_port
             self.state.logs = list(self._log_buffer)
-            return {"device_id": self.config.device_id, **asdict(self.state)}
+            snapshot = {"device_id": self.config.device_id, **asdict(self.state)}
+        return snapshot
+
+    def attach_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        self._loop = loop
 
     # ---------------------------------------------------
     # COMMANDS
@@ -81,6 +89,7 @@ class DeviceController:
             self.state.last_error = None
             self.state.stop_requested = False
             self.state.sequence_step = None
+        self._broadcast_status()
 
         self._stop_event.clear()
         self._sequence_thread = threading.Thread(
@@ -96,6 +105,7 @@ class DeviceController:
             self.state.last_error = "Operation stopped"
             self.state.current_sequence = None
             self.state.sequence_step = None
+        self._broadcast_status()
 
     def emergency_stop(self) -> None:
         self.stop_sequence()
@@ -104,6 +114,7 @@ class DeviceController:
             self.state.state = "ERROR"
             self.state.current_sequence = None
             self.state.last_error = "Emergency stop activated"
+        self._broadcast_status()
 
     def set_relay(self, channel: int, enabled: bool) -> bool:
         self._ensure_manual_allowed()
@@ -132,6 +143,7 @@ class DeviceController:
             self.state.last_error = None
             self.state.stop_requested = False
             self.state.sequence_step = "Preparing outputs"
+        self._broadcast_status()
 
         self._stop_event.clear()
         self._sequence_thread = threading.Thread(target=self._run_homing, daemon=True)
@@ -150,11 +162,11 @@ class DeviceController:
                         log=self._log,
                         relays=relay_adapter,
                         syringe=self.syringe,
-                        move_horizontal_to_filtering=self._noop("move_horizontal_to_filtering"),
-                        move_vertical_close_plate=self._noop("move_vertical_close_plate"),
+                        move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
+                        move_vertical_close_plate=self._move_vertical_preset("close"),
                         select_rotary_port=lambda p: self._set_rotary_port(p, allow_when_running=True),
                         before_step=self._before_step,
-                        init=self._noop("init_homing"),
+                        init=self._home_all_axes,
                     )
                 )
             elif sequence_name.lower() in {"sequence2", "seq2"}:
@@ -164,10 +176,10 @@ class DeviceController:
                         log=self._log,
                         relays=relay_adapter,
                         syringe=self.syringe,
-                        move_horizontal_to_filtering=self._noop("move_horizontal_to_filtering"),
-                        move_horizontal_home=self._noop("move_horizontal_home"),
-                        move_vertical_close_plate=self._noop("move_vertical_close_plate"),
-                        move_vertical_open_plate=self._noop("move_vertical_open_plate"),
+                        move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
+                        move_horizontal_home=self._move_horizontal_preset("home"),
+                        move_vertical_close_plate=self._move_vertical_preset("close"),
+                        move_vertical_open_plate=self._move_vertical_preset("open"),
                         select_rotary_port=lambda p: self._set_rotary_port(p, allow_when_running=True),
                         before_step=self._before_step,
                     )
@@ -187,6 +199,7 @@ class DeviceController:
                 self.state.current_sequence = None
                 self.state.sequence_step = None
                 self.state.stop_requested = False
+            self._broadcast_status()
             self._stop_event.clear()
 
     def _execute_sequence(self, func: Callable[[], None]) -> None:
@@ -196,6 +209,7 @@ class DeviceController:
         with self._state_lock:
             self.state.sequence_step = step_label
         self._append_log(step_label)
+        self._broadcast_status()
 
     def _log(self, message: str) -> None:
         self._append_log(message)
@@ -206,6 +220,7 @@ class DeviceController:
             self._log_buffer.append(message)
             if len(self._log_buffer) > 100:
                 self._log_buffer = self._log_buffer[-100:]
+        self._broadcast_status()
 
     def _not_wired(self, label: str) -> Callable[[], None]:
         def _fn():
@@ -310,6 +325,7 @@ class DeviceController:
             self.relay_states[channel] = enabled
             with self._state_lock:
                 self.state.relay_states = dict(self.relay_states)
+            self._broadcast_status()
         return ok
 
     def _set_rotary_port(self, port: int, allow_when_running: bool) -> bool:
@@ -320,6 +336,7 @@ class DeviceController:
             self.rotary_port = port
             with self._state_lock:
                 self.state.rotary_port = port
+            self._broadcast_status()
         return ok
 
     def _ensure_manual_allowed(self) -> None:
@@ -331,6 +348,53 @@ class DeviceController:
             self._log(f"[NOOP] {label} (not wired)")
 
         return _fn
+
+    def _move_horizontal_preset(self, key: str) -> Callable[[], None]:
+        presets = {
+            "filtering": 133.0,
+            "filter out": 26.0,
+            "filter in": 0.0,
+            "home": 0.0,
+        }
+        target = presets.get(key.lower())
+        if target is None:
+            return self._noop(f"horizontal preset {key}")
+
+        def _fn():
+            self._assert_horizontal_allowed()
+            self.horizontal_axis.move_mm(target, rpm=5.0, stop_flag=self._stop_event.is_set)
+
+        return _fn
+
+    def _move_vertical_preset(self, key: str) -> Callable[[], None]:
+        presets = {
+            "open": 0.0,
+            "close": 33.0,
+            "home": 0.0,
+        }
+        target = presets.get(key.lower())
+        if target is None:
+            return self._noop(f"vertical preset {key}")
+
+        def _fn():
+            self.vertical_axis.move_mm(target, rpm=5.0, stop_flag=self._stop_event.is_set)
+
+        return _fn
+
+    def _home_all_axes(self) -> None:
+        self._home_vertical_axis()
+        self._home_horizontal_axis()
+
+    def _broadcast_status(self) -> None:
+        if not self._loop or not self._sse_subscribers:
+            return
+        snapshot = self.get_status()
+        payload = json.dumps(snapshot)
+        for q in list(self._sse_subscribers):
+            try:
+                self._loop.call_soon_threadsafe(q.put_nowait, payload)
+            except Exception:
+                continue
 
 
 class _RelayAdapter:
