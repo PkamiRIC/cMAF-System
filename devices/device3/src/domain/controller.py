@@ -356,6 +356,8 @@ class DeviceController:
             "filter out": 26.0,
             "filter in": 0.0,
             "home": 0.0,
+            "loading 0mm": 0.0,
+            "loadin 0mm": 0.0,
         }
         target = presets.get(key.lower())
         if target is None:
