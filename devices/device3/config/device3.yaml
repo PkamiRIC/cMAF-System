@@ -38,3 +38,4 @@ horizontal_axis:
   min_mm: 0
   max_mm: null       # no hard max in old config
   timeout: 1.0
+  vertical_guard_mm: 10   # block horizontal moves if vertical > 10 mm

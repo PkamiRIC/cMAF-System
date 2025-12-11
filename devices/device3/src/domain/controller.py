@@ -250,9 +250,28 @@ class DeviceController:
         Replace this implementation with your motion controller call,
         e.g., horizontal_driver.home_blocking().
         """
+        self._assert_horizontal_allowed()
         if not self.horizontal_axis.ready:
             try:
                 self.horizontal_axis.connect()
             except Exception as exc:
                 raise RuntimeError(f"Horizontal axis unavailable: {exc}")
         self.horizontal_axis.home(stop_flag=self._stop_event.is_set)
+
+    def _assert_horizontal_allowed(self) -> None:
+        guard = self.config.horizontal_axis.vertical_guard_mm
+        if guard is None:
+            return
+        vpos = self._read_vertical_position_mm()
+        if vpos is None:
+            raise RuntimeError("Horizontal axis locked: vertical axis position unavailable")
+        if vpos > guard:
+            raise RuntimeError(
+                f"Horizontal axis locked: vertical axis at {vpos:.2f} mm (> {guard:.1f} mm limit)"
+            )
+
+    def _read_vertical_position_mm(self) -> Optional[float]:
+        try:
+            return self.vertical_axis.read_position_mm()
+        except Exception:
+            return None

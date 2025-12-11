@@ -49,6 +49,8 @@ class AxisConfig:
     min_mm: Optional[float] = 0.0
     max_mm: Optional[float] = 33.0
     timeout: float = 1.0
+    # Optional guard: block horizontal motion if vertical exceeds this height
+    vertical_guard_mm: Optional[float] = None
 
 
 @dataclass

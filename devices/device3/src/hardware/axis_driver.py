@@ -45,6 +45,21 @@ class AxisDriver:
         pump.goto_absolute(volume_ml, flow_ml_min)
         pump.wait_until_idle(timeout=30.0, stop_flag=stop_flag)
 
+    def read_position_mm(self) -> Optional[float]:
+        pump = self._pump
+        if pump is None:
+            return None
+        status = pump.read_status()
+        if not status:
+            return None
+        try:
+            steps_per_mm = self.config.steps_per_mm
+            if steps_per_mm <= 0:
+                return None
+            return float(status["actual_position"]) / float(steps_per_mm)
+        except Exception:
+            return None
+
     def _require_pump(self) -> SyringePump:
         pump = self._pump
         if pump is None:
