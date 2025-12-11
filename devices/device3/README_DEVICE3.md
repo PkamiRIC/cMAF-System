@@ -1,148 +1,67 @@
-# Device 3 – PLC Quick Guide (WARP3PLC)
+# Device 3 PLC Guide (WARP3PLC)
 
-This file contains only the essential commands to operate Device 3 **on the PLC**.
-
-All commands run after SSH:
-
+SSH into the PLC:
 ```
 ssh pi@warp3plc.local
 # or
 ssh pi@<PLC_IP>
 ```
 
----
-
-## 1. Project Paths (ON PLC)
-
+## Project Paths (on PLC)
 ```
 /home/pi/projects/WARP-Devices/devices/device3
-  ├── src/          # FastAPI backend
-  ├── config/       # device3.yaml (API port & device_id)
-  ├── .venv/        # Python virtual environment
-  └── requirements.txt
+  src/          # FastAPI backend
+  config/       # device3.yaml
+  .venv/        # Python virtual environment
+  requirements.txt
 ```
 
----
-
-## 2. Run Backend (Manual Mode)
-
-Use for debugging.
-
+## Run Backend (manual)
 ```
 cd ~/projects/WARP-Devices/devices/device3/src
 source ../.venv/bin/activate
 python -m main --config ../config/device3.yaml
 ```
+Backend: http://localhost:8003
 
-Backend should say:
-
+## systemd (production)
+Service: device3.service
 ```
-Uvicorn running on http://0.0.0.0:8003
-```
-
-Test from PC:
-
-```
-http://warp3plc.local:8003/status
-```
-
----
-
-## 3. Run Backend (Production Mode – systemd)
-
-Service name: **device3.service**
-
-### Start:
-```
-sudo systemctl start device3.service
-```
-
-### Stop:
-```
-sudo systemctl stop device3.service
-```
-
-### Restart (after pulling new code):
-```
-sudo systemctl restart device3.service
-```
-
-### Enable autostart:
-```
+sudo systemctl start|stop|restart device3.service
 sudo systemctl enable device3.service
-```
-
-### Status:
-```
 sudo systemctl status device3.service
-```
-
-### Logs:
-```
 journalctl -u device3.service -n 50 --no-pager
 ```
 
----
-
-## 4. Update Code from GitHub
-
+## Update code / deps
 ```
-cd ~/projects/WARP-Devices
-git pull
-```
-
-If requirements changed:
-
-```
-cd devices/device3
-source .venv/bin/activate
+cd ~/projects/WARP-Devices && git pull
+cd devices/device3 && source .venv/bin/activate
 pip install -r requirements.txt
 sudo systemctl restart device3.service
 ```
 
----
+## API (manual + sequences)
+- GET  `/status`            → state, step, relay/rotary, logs
+- GET  `/events/sse`        → realtime status stream (use in UI)
+- POST `/command/start/{sequence_name}` (sequence1, sequence2)
+- POST `/command/stop`      → stop current sequence
+- POST `/command/home`      → home axes + syringe
+- POST `/command/emergency_stop`
+- POST `/relays/{channel}/{on|off}`
+- POST `/rotary/{port}`
+- POST `/syringe/move` body `{"volume_ml":..., "flow_ml_min":...}`
 
-## 5. Edit Configuration
+Manual controls are locked while a sequence runs; status/SSE still reflect live relay/rotary changes.
 
-Config file:
-
+## Config (device3/config/device3.yaml)
+Key fields:
 ```
-~/projects/WARP-Devices/devices/device3/config/device3.yaml
+network.api_port: 8003
+relay.port: /dev/ttySC3 , address: 0x02
+rotary.port: /dev/ttySC3 , address: 0x01
+syringe.port: /dev/ttySC3 , address: 0x4C
+vertical_axis.port: /dev/ttySC3 , address: 0x4E , limits 0–33 mm
+horizontal_axis.port: /dev/ttySC3 , address: 0x4D , vertical_guard_mm: 10
 ```
-
-Example:
-
-```yaml
-device_id: "device3"
-network:
-  api_port: 8003
-```
-
-If port changes → update dashboard `.env` and restart service.
-
----
-
-## 6. Health Check
-
-From PLC:
-
-```
-curl http://localhost:8003/status
-```
-
-From PC:
-
-```
-http://warp3plc.local:8003/status
-```
-
----
-
-## 7. When to Update This File
-
-Update this file anytime:
-
-- API port changes  
-- Device path changes  
-- Service name/path changes  
-- Additional operational commands are added  
+Update config if wiring/ports/addresses change, then restart the service.

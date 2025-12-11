@@ -1,89 +1,51 @@
-# Device 2 – PLC Quick Guide (WARP2PLC)
-
-This file contains the essential commands to operate Device 2 **on its PLC**.
+# Device 2 PLC Quick Guide (WARP2PLC)
 
 SSH into the PLC:
-
 ```
 ssh pi@warp2plc.local
 # or
 ssh pi@<DEVICE2_IP>
 ```
 
----
-
-## 1. Project Paths (ON PLC)
-
+## Project Paths (on PLC)
 ```
 /home/pi/projects/WARP-Devices/devices/device2
-  ├── src/
-  ├── config/
-  ├── .venv/
-  └── requirements.txt
+  src/
+  config/
+  .venv/
+  requirements.txt
 ```
 
----
-
-## 2. Run Backend (Manual Mode)
-
+## Run Backend (manual)
 ```
 cd ~/projects/WARP-Devices/devices/device2/src
 source ../.venv/bin/activate
 python -m main --config ../config/device2.yaml
 ```
+Test: http://warp2plc.local:8002/status
 
-Test:
-
+## systemd (production)
+Service: device2.service
 ```
-http://warp2plc.local:8002/status
-```
-
----
-
-## 3. Run Backend (Production via systemd)
-
-Service name: **device2.service**
-
-```
-sudo systemctl start device2.service
-sudo systemctl stop device2.service
-sudo systemctl restart device2.service
+sudo systemctl start|stop|restart device2.service
 sudo systemctl enable device2.service
 sudo systemctl status device2.service
 journalctl -u device2.service -n 50 --no-pager
 ```
 
----
-
-## 4. Update Code
-
+## Update code / deps
 ```
-cd ~/projects/WARP-Devices
-git pull
-```
-
-If dependencies change:
-
-```
-cd devices/device2
-source .venv/bin/activate
+cd ~/projects/WARP-Devices && git pull
+cd devices/device2 && source .venv/bin/activate
 pip install -r requirements.txt
 sudo systemctl restart device2.service
 ```
 
----
+## Config
+Edit: ~/projects/WARP-Devices/devices/device2/config/device2.yaml
 
-## 5. Edit Config
-
-```
-~/projects/WARP-Devices/devices/device2/config/device2.yaml
-```
-
----
-
-## 6. Health Check
-
+## Health check
 ```
 curl http://localhost:8002/status
-http://warp2plc.local:8002/status
+curl http://warp2plc.local:8002/status
 ```
