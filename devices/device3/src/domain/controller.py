@@ -10,7 +10,8 @@ from hardware.rotary_valve import RotaryValve
 from hardware.syringe_pump import SyringePump
 from hardware.axis_driver import AxisDriver
 from infra.config import DeviceConfig
-from domain.sequences import run_maf_sampling_sequence, run_sequence2
+from domain.sequence1 import run_maf_sampling_sequence
+from domain.sequence2 import run_sequence2
 
 
 @dataclass
