@@ -165,9 +165,15 @@ class SyringePump:
 
         return None
 
-    def wait_until_idle(self, timeout: Optional[float] = None) -> bool:
+    def wait_until_idle(self, timeout: Optional[float] = None, stop_flag: Optional[callable] = None) -> bool:
+        """
+        Wait until the drive reports idle.
+        Returns False on timeout or if stop_flag() becomes True.
+        """
         start_time = time.time()
         while True:
+            if stop_flag and stop_flag():
+                return False
             status = self.read_status()
             if status is not None and status.get("busy") == 0:
                 return True
