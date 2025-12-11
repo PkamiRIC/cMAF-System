@@ -3,7 +3,7 @@ import "./App.css";
 import { DeviceCard } from "./components/DeviceCard";
 
 function App() {
-  const device3Url = import.meta.env.VITE_DEVICE3_URL;
+  const device3Url = import.meta.env.VITE_DEVICE3_URL || "";
 
   return (
     <div className="min-h-screen bg-slate-100 p-6">

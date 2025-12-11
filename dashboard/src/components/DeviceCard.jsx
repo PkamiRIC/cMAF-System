@@ -1,4 +1,3 @@
-// dashboard/src/components/DeviceCard.jsx
 import { useEffect, useState } from "react";
 
 export function DeviceCard({ name, baseUrl }) {
@@ -31,7 +30,6 @@ export function DeviceCard({ name, baseUrl }) {
       }
     }
 
-    // Initial fetch + polling every 2s
     fetchStatus();
     const id = setInterval(fetchStatus, 2000);
 
