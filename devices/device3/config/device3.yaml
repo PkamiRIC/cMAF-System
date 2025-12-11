@@ -30,7 +30,7 @@ vertical_axis:
   max_mm: 33
   timeout: 1.0
 horizontal_axis:
-  port: "/dev/ttySC2"
+  port: "/dev/ttySC3"
   address: 77        # 0x4D
   steps_per_ml: 2000
   velocity_calib: 1000
