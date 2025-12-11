@@ -14,7 +14,7 @@ rotary:
   parity: "N"
   timeout: 0.3
 syringe:
-  port: "/dev/ttySC2"
+  port: "/dev/ttySC3"
   address: 76
   baudrate: 9600
   steps_per_ml: 8000000
