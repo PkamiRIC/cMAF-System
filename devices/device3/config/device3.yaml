@@ -21,7 +21,7 @@ syringe:
   velocity_calib: 8000
   timeout: 1.0
 vertical_axis:
-  port: "/dev/ttySC2"
+  port: "/dev/ttySC3"
   address: 78        # 0x4E
   steps_per_ml: 2000
   velocity_calib: 1000
