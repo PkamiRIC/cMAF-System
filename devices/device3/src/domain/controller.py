@@ -238,7 +238,7 @@ class DeviceController:
                 self.vertical_axis.connect()
             except Exception as exc:
                 raise RuntimeError(f"Vertical axis unavailable: {exc}")
-        self.vertical_axis.home()
+        self.vertical_axis.home(stop_flag=self._stop_event.is_set)
 
     def _home_horizontal_axis(self) -> None:
         """
@@ -251,4 +251,4 @@ class DeviceController:
                 self.horizontal_axis.connect()
             except Exception as exc:
                 raise RuntimeError(f"Horizontal axis unavailable: {exc}")
-        self.horizontal_axis.home()
+        self.horizontal_axis.home(stop_flag=self._stop_event.is_set)
