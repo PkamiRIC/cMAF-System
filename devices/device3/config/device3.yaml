@@ -2,7 +2,7 @@ device_id: "device3"
 network:
   api_port: 8003
 relay:
-  port: "/dev/ttySC2"
+  port: "/dev/ttySC3"
   address: 2
   baudrate: 9600
   parity: "N"
