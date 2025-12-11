@@ -26,9 +26,12 @@ class AxisDriver:
         with self._lock:
             self._pump = pump
 
-    def home(self) -> None:
+    def home(self, timeout: float = 5.0) -> None:
         pump = self._require_pump()
         pump.home()
+        ok = pump.wait_until_idle(timeout=timeout)
+        if not ok:
+            raise RuntimeError(f"{self.name} homing timed out")
 
     def move_mm(self, target_mm: float, rpm: float) -> None:
         pump = self._require_pump()

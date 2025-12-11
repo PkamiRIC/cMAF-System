@@ -99,12 +99,10 @@ class DeviceController:
     def home_all(self) -> None:
         """
         Homing routine mirroring the old GUI's Initialize button:
-        1) Make outputs safe (relays off)
-        2) Home vertical axis, then horizontal axis
-        3) Home syringe pump
+        runs in a background thread so it can be stopped.
         """
         if self._sequence_thread and self._sequence_thread.is_alive():
-            raise RuntimeError("Cannot home while a sequence is running")
+            raise RuntimeError("Another operation is already running")
 
         with self._state_lock:
             self.state.state = "RUNNING"
@@ -113,33 +111,9 @@ class DeviceController:
             self.state.stop_requested = False
             self.state.sequence_step = "Preparing outputs"
 
-        try:
-            self._stop_event.clear()
-            self._prepare_outputs_for_homing()
-
-            self._before_step("Homing vertical axis")
-            self._home_vertical_axis()
-
-            self._before_step("Homing horizontal axis")
-            self._home_horizontal_axis()
-
-            self._before_step("Homing syringe pump")
-            self.syringe.home()
-
-            with self._state_lock:
-                self.state.state = "IDLE"
-                self.state.last_error = None
-        except Exception as exc:
-            with self._state_lock:
-                self.state.state = "ERROR"
-                self.state.last_error = str(exc)
-            raise
-        finally:
-            with self._state_lock:
-                self.state.current_sequence = None
-                self.state.sequence_step = None
-                self.state.stop_requested = False
-            self._stop_event.clear()
+        self._stop_event.clear()
+        self._sequence_thread = threading.Thread(target=self._run_homing, daemon=True)
+        self._sequence_thread.start()
 
     # ---------------------------------------------------
     # Internals
@@ -217,6 +191,41 @@ class DeviceController:
         except Exception:
             # Keep going even if one relay write fails
             pass
+
+    def _check_stop(self) -> None:
+        if self._stop_event.is_set():
+            raise RuntimeError("Operation stopped")
+
+    def _run_homing(self) -> None:
+        try:
+            self._check_stop()
+            self._prepare_outputs_for_homing()
+
+            self._before_step("Homing vertical axis")
+            self._check_stop()
+            self._home_vertical_axis()
+
+            self._before_step("Homing horizontal axis")
+            self._check_stop()
+            self._home_horizontal_axis()
+
+            self._before_step("Homing syringe pump")
+            self._check_stop()
+            self.syringe.home()
+
+            with self._state_lock:
+                self.state.state = "IDLE"
+                self.state.last_error = None
+        except Exception as exc:
+            with self._state_lock:
+                self.state.state = "ERROR"
+                self.state.last_error = str(exc)
+        finally:
+            with self._state_lock:
+                self.state.current_sequence = None
+                self.state.sequence_step = None
+                self.state.stop_requested = False
+            self._stop_event.clear()
 
     def _home_vertical_axis(self) -> None:
         """

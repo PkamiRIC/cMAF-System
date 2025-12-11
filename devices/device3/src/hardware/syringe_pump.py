@@ -169,10 +169,7 @@ class SyringePump:
         start_time = time.time()
         while True:
             status = self.read_status()
-            if status is None:
-                time.sleep(0.5)
-                continue
-            if status["busy"] == 0:
+            if status is not None and status.get("busy") == 0:
                 return True
             if timeout is not None and (time.time() - start_time) >= timeout:
                 return False
