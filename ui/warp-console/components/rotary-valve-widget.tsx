@@ -1,14 +1,16 @@
 "use client"
 
-import { useState } from "react"
+type Props = {
+  activePort: number
+  onSelect?: (port: number) => void
+  locked?: boolean
+}
 
-export default function RotaryValveWidget() {
-  const [activePort, setActivePort] = useState<number>(1)
+export default function RotaryValveWidget({ activePort, onSelect, locked }: Props) {
   const ports = [1, 2, 3, 4, 5, 6]
 
-  // Calculate positions for 6 ports in a circle
   const getPortPosition = (index: number) => {
-    const angle = (index * 360) / 6 - 90 // Start from top
+    const angle = (index * 360) / 6 - 90
     const radius = 80
     const x = Math.cos((angle * Math.PI) / 180) * radius
     const y = Math.sin((angle * Math.PI) / 180) * radius
@@ -24,10 +26,8 @@ export default function RotaryValveWidget() {
         </span>
       </div>
 
-      {/* Circular SVG representation */}
       <div className="flex justify-center items-center py-4">
         <svg width="280" height="280" viewBox="0 0 280 280" className="drop-shadow-xl">
-          {/* Outer circle background with gradient */}
           <defs>
             <radialGradient id="bgGradient" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="rgb(30, 41, 59)" stopOpacity="1" />
@@ -36,7 +36,6 @@ export default function RotaryValveWidget() {
           </defs>
           <circle cx="140" cy="140" r="130" fill="url(#bgGradient)" stroke="rgb(71, 85, 105)" strokeWidth="2" />
 
-          {/* Center circle */}
           <circle
             cx="140"
             cy="140"
@@ -47,7 +46,6 @@ export default function RotaryValveWidget() {
             className="drop-shadow-lg"
           />
 
-          {/* Indicator needle pointing to active port */}
           <g>
             <line
               x1="140"
@@ -66,12 +64,15 @@ export default function RotaryValveWidget() {
             />
           </g>
 
-          {/* Port buttons in circle */}
           {ports.map((port, index) => {
             const pos = getPortPosition(index)
             const isActive = port === activePort
             return (
-              <g key={port} onClick={() => setActivePort(port)} style={{ cursor: "pointer" }}>
+              <g
+                key={port}
+                onClick={() => !locked && onSelect?.(port)}
+                style={{ cursor: locked ? "not-allowed" : "pointer" }}
+              >
                 <circle
                   cx={140 + pos.x}
                   cy={140 + pos.y}
@@ -80,7 +81,7 @@ export default function RotaryValveWidget() {
                   stroke={isActive ? "rgb(147, 197, 253)" : "rgb(71, 85, 105)"}
                   strokeWidth="3"
                   className={isActive ? "drop-shadow-lg" : ""}
-                  style={{ transition: "all 0.3s ease" }}
+                  style={{ transition: "all 0.3s ease", opacity: locked && !isActive ? 0.4 : 1 }}
                 />
                 <text
                   x={140 + pos.x}
@@ -99,7 +100,9 @@ export default function RotaryValveWidget() {
         </svg>
       </div>
 
-      <p className="text-sm text-muted-foreground text-center font-medium">Click any port to select</p>
+      <p className="text-sm text-muted-foreground text-center font-medium">
+        {locked ? "Sequence running (locked)" : "Click any port to select"}
+      </p>
     </div>
   )
 }

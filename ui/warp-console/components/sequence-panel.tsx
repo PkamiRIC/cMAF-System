@@ -1,11 +1,15 @@
 "use client"
 
+import type { DeviceStatus } from "./status-display"
+
 interface SequencePanelProps {
   activeSequence: "seq1" | "seq2" | "seq3"
   setActiveSequence: (seq: "seq1" | "seq2" | "seq3") => void
+  status?: DeviceStatus
+  error?: string | null
 }
 
-export default function SequencePanel({ activeSequence, setActiveSequence }: SequencePanelProps) {
+export default function SequencePanel({ activeSequence, setActiveSequence, status, error }: SequencePanelProps) {
   return (
     <div className="premium-card p-6 space-y-4">
       <h2 className="text-lg font-semibold text-foreground">Sequences</h2>
@@ -52,11 +56,25 @@ export default function SequencePanel({ activeSequence, setActiveSequence }: Seq
         </div>
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground font-medium">Status:</span>
-          <span className="text-sm text-success font-semibold flex items-center gap-2">
-            <span className="w-2 h-2 bg-success rounded-full animate-pulse shadow-lg shadow-success/50" />
-            Ready
+          <span className="text-sm font-semibold flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                status?.state === "RUNNING" ? "bg-primary animate-pulse shadow-lg shadow-primary/50" : "bg-muted"
+              }`}
+            />
+            {status?.state || "unknown"}
           </span>
         </div>
+        {status?.sequence_step && (
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground font-medium">Step:</span>
+            <span className="text-sm text-foreground font-semibold">{status.sequence_step}</span>
+          </div>
+        )}
+        {status?.last_error && (
+          <div className="text-xs text-destructive font-semibold">Error: {status.last_error}</div>
+        )}
+        {error && <div className="text-xs text-destructive font-semibold">UI error: {error}</div>}
       </div>
     </div>
   )
