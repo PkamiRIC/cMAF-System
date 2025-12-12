@@ -1,30 +1,21 @@
-# Frontend with WARP colors
+# Warp Console (Next.js, v0)
 
-*Automatically synced with your [v0.app](https://v0.app) deployments*
+Next.js frontend generated via v0. Points to the Device 3 FastAPI backend.
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/pkamintzis-3031s-projects/v0-frontend-with-warp-colors)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.app-black?style=for-the-badge)](https://v0.app/chat/hyHqBqoMYQ9)
+## Local dev
+```
+cd ui/warp-console
+pnpm install    # or npm install
+NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003 pnpm dev
+```
+Set `NEXT_PUBLIC_API_BASE` to your backend (PLC or localhost).
 
-## Overview
+## Build
+```
+pnpm build
+pnpm start    # serve production build
+```
 
-This repository will stay in sync with your deployed chats on [v0.app](https://v0.app).
-Any changes you make to your deployed app will be automatically pushed to this repository from [v0.app](https://v0.app).
-
-## Deployment
-
-Your project is live at:
-
-**[https://vercel.com/pkamintzis-3031s-projects/v0-frontend-with-warp-colors](https://vercel.com/pkamintzis-3031s-projects/v0-frontend-with-warp-colors)**
-
-## Build your app
-
-Continue building your app on:
-
-**[https://v0.app/chat/hyHqBqoMYQ9](https://v0.app/chat/hyHqBqoMYQ9)**
-
-## How It Works
-
-1. Create and modify your project using [v0.app](https://v0.app)
-2. Deploy your chats from the v0 interface
-3. Changes are automatically pushed to this repository
-4. Vercel deploys the latest version from this repository
+## Notes
+- API endpoints expected: `/status`, `/events/sse`, `/command/*`, `/relays`, `/rotary`, `/syringe/move`.
+- Backend must have CORS enabled if served from a different origin.
