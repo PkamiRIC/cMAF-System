@@ -4,6 +4,17 @@ import { useState } from "react"
 import AxisWidget from "./axis-widget"
 import SyringeWidget from "./syringe-widget"
 
+const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8003"
+
+async function post(path: string, body?: any) {
+  const res = await fetch(`${apiBase}${path}`, {
+    method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error(`POST ${path} failed (${res.status})`)
+}
+
 export default function ControlPanel() {
   const [verticalPos, setVerticalPos] = useState(25.0)
   const [verticalTarget, setVerticalTarget] = useState(50.0)
@@ -26,17 +37,42 @@ export default function ControlPanel() {
   const [syringeVolume, setSyringeVolume] = useState(2.5)
   const [flowRate, setFlowRate] = useState(1.0)
   const [isSyringeActive, setIsSyringeActive] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const [relayStates, setRelayStates] = useState<boolean[]>(Array(8).fill(false))
 
-  const toggleRelay = (index: number) => {
-    const newStates = [...relayStates]
-    newStates[index] = !newStates[index]
-    setRelayStates(newStates)
+  const toggleRelay = async (index: number) => {
+    const desired = !relayStates[index]
+    try {
+      await post(`/relays/${index + 1}/${desired ? "on" : "off"}`)
+      const newStates = [...relayStates]
+      newStates[index] = desired
+      setRelayStates(newStates)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Relay toggle failed")
+    }
   }
 
-  const toggleAllRelays = (state: boolean) => {
-    setRelayStates(Array(8).fill(state))
+  const toggleAllRelays = async (state: boolean) => {
+    try {
+      const promises = relayStates.map((_, idx) => post(`/relays/${idx + 1}/${state ? "on" : "off"}`))
+      await Promise.all(promises)
+      setRelayStates(Array(8).fill(state))
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Relay toggle failed")
+    }
+  }
+
+  const handleSyringeMove = async (target: number) => {
+    try {
+      await post("/syringe/move", { volume_ml: target, flow_ml_min: flowRate })
+      setIsSyringeActive(target !== 0)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Syringe command failed")
+    }
   }
 
   return (
@@ -128,11 +164,14 @@ export default function ControlPanel() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <button className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-primary/20">
+              <button
+                onClick={() => handleSyringeMove(syringeVolume)}
+                className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-primary/20"
+              >
                 Draw
               </button>
               <button
-                onClick={() => setIsSyringeActive(!isSyringeActive)}
+                onClick={() => handleSyringeMove(0)}
                 className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all shadow-md ${
                   isSyringeActive
                     ? "bg-destructive text-destructive-foreground hover:opacity-90 shadow-destructive/20"
@@ -178,6 +217,8 @@ export default function ControlPanel() {
               All OFF
             </button>
           </div>
+
+          {error && <div className="text-xs text-destructive font-semibold">{error}</div>}
         </div>
       </div>
     </div>
