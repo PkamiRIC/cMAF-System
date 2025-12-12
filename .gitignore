@@ -14,3 +14,10 @@ env
 # Node (for future React UI)
 node_modules/
 dist/
+
+ui/**/node_modules
+ui/**/.env
+ui/**/.env.*
+ui/**/dist
+ui/**/next
+ui/**/.turbo
