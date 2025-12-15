@@ -29,6 +29,7 @@ class DeviceState:
     logs: list = field(default_factory=list)
     syringe_busy: bool = False
     syringe_volume_ml: Optional[float] = None
+    syringe_target_ml: Optional[float] = None
 
 
 class DeviceController:
@@ -76,10 +77,13 @@ class DeviceController:
                 syringe_status = None
             if syringe_status:
                 busy_flag = syringe_status.get("busy")
+                vel = syringe_status.get("actual_velocity")
                 if busy_flag == 1:
                     self.state.syringe_busy = True
                 elif busy_flag == 0:
-                    self.state.syringe_busy = False
+                    # Clear busy only when drive reports idle and velocity is effectively zero
+                    if vel is None or abs(float(vel)) < 1.0:
+                        self.state.syringe_busy = False
                 # keep last busy value if busy_flag is None/unknown
                 vol = syringe_status.get("volume_ml")
                 if isinstance(vol, (int, float)):
@@ -162,18 +166,23 @@ class DeviceController:
         self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")
         with self._state_lock:
             self.state.syringe_busy = True
+            self.state.syringe_target_ml = volume_ml
         self.syringe.goto_absolute(volume_ml, flow_ml_min)
         with self._state_lock:
             self.state.syringe_volume_ml = volume_ml
 
     def stop_syringe(self) -> None:
-        self._ensure_manual_allowed()
+        # Allow stopping even during homing sequence
+        if self.state.state == "RUNNING" and self.state.current_sequence != "homing":
+            self._ensure_manual_allowed()
         self._log("[Syringe] stop request")
+        self._stop_event.set()
         ok = self.syringe.stop_motion()
         if not ok:
             raise RuntimeError("Syringe stop failed")
         with self._state_lock:
             self.state.syringe_busy = False
+        self._stop_event.clear()
         self._broadcast_status()
 
     def home_syringe(self) -> None:
