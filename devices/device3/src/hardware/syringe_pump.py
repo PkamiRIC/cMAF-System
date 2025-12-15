@@ -128,7 +128,7 @@ class SyringePump:
         """Alias kept for compatibility with the old GUI code."""
         self.goto_absolute(volume_ml, flow_rate_ml_min)
 
-    def read_status(self, max_tries: int = 5, poll_timeout: float = 0.2) -> Optional[dict]:
+    def read_status(self, max_tries: int = 5) -> Optional[dict]:
         """
         Query DDS5 status & live data.
         Returns a dict or None if communication fails.
@@ -140,25 +140,25 @@ class SyringePump:
         while tries < max_tries:
             tries += 1
             try:
-                with self._open_serial(timeout=poll_timeout) as ser:
+                with self._open_serial(timeout=2.0) as ser:
                     ser.reset_input_buffer()
                     ser.reset_output_buffer()
                     ser.flush()
                     ser.write(poll)
-                    time.sleep(0.1)
+                    time.sleep(0.2)
                     resp = ser.read(19)
             except Exception:
-                time.sleep(0.1)
+                time.sleep(0.2)
                 continue
 
             if len(resp) != 19:
-                time.sleep(0.1)
+                time.sleep(0.2)
                 continue
             if resp[0] != self.config.address or resp[1] != 0x03 or resp[2] != 0x0E:
-                time.sleep(0.1)
+                time.sleep(0.2)
                 continue
             if self._crc16(resp[:-2]) != resp[-2:]:
-                time.sleep(0.1)
+                time.sleep(0.2)
                 continue
 
             sdw = int.from_bytes(resp[3:7], "big")

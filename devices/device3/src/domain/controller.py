@@ -71,7 +71,7 @@ class DeviceController:
             self.state.total_volume_l = self.io.read_volume()
             # syringe status for UI
             try:
-                syringe_status = self.syringe.read_status(max_tries=1, poll_timeout=0.1)
+                syringe_status = self.syringe.read_status()
             except Exception:
                 syringe_status = None
             if syringe_status:
