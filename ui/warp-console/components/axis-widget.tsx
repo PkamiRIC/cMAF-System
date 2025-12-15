@@ -20,6 +20,7 @@ interface AxisWidgetProps {
   onPosition2?: () => void
   onPosition3?: () => void
   onHome?: () => void
+  onMove?: () => void
   position: number
   speed: number
   onPositionChange: (value: number) => void
@@ -42,6 +43,7 @@ export default function AxisWidget({
   onPosition2,
   onPosition3,
   onHome,
+  onMove,
   position,
   speed,
   onPositionChange,
@@ -181,6 +183,13 @@ export default function AxisWidget({
               className="px-3 py-2 text-sm font-medium bg-secondary text-secondary-foreground rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               Home
+            </button>
+            <button
+              onClick={onMove}
+              disabled={!onMove}
+              className="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-primary/20"
+            >
+              Move
             </button>
             <button
               onClick={onPosition1}

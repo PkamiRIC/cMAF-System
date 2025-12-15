@@ -189,6 +189,11 @@ export default function ControlPanel() {
           speed={verticalSpeed}
           onPositionChange={(val) => setVerticalPosition(clamp(val, verticalMin, verticalMax))}
           onSpeedChange={setVerticalSpeed}
+          onMove={() => {
+            const target = clamp(verticalPosition, verticalMin, verticalMax)
+            setVerticalPos(target)
+            moveAxis("Z", target, verticalSpeed)
+          }}
         />
 
         <AxisWidget
@@ -226,6 +231,11 @@ export default function ControlPanel() {
           speed={horizontalSpeed}
           onPositionChange={(val) => setHorizontalPosition(clamp(val, horizontalMin, horizontalMax))}
           onSpeedChange={setHorizontalSpeed}
+          onMove={() => {
+            const target = clamp(horizontalPosition, horizontalMin, horizontalMax)
+            setHorizontalPos(target)
+            moveAxis("X", target, horizontalSpeed)
+          }}
         />
       </div>
 

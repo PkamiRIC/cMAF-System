@@ -16,6 +16,11 @@ class SyringeMove(BaseModel):
     flow_ml_min: float = Field(..., description="Flow rate in mL/min")
 
 
+class AxisMove(BaseModel):
+    position_mm: float
+    rpm: float
+
+
 def create_app(config: DeviceConfig, config_path: str):
     controller = DeviceController(config)
 
@@ -105,9 +110,9 @@ def create_app(config: DeviceConfig, config_path: str):
         return {"ok": True}
 
     @app.post("/axis/{axis}/move")
-    def axis_move(axis: Literal["X", "Z", "x", "z"], position_mm: float, rpm: float):
+    def axis_move(axis: Literal["X", "Z", "x", "z"], payload: AxisMove):
         try:
-            controller.move_axis(axis, position_mm, rpm)
+            controller.move_axis(axis, payload.position_mm, payload.rpm)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
