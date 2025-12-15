@@ -177,7 +177,7 @@ export default function ControlPanel() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="premium-card p-6 flex items-center justify-center">
-          <SyringeWidget volume={syringeLiveVolume ?? syringeVolume} maxVolume={10} isActive={isSyringeActive} />
+          <SyringeWidget volume={syringeLiveVolume ?? syringeVolume} maxVolume={2.5} isActive={isSyringeActive} />
         </div>
 
         <div className="premium-card p-6 space-y-4">
@@ -195,9 +195,11 @@ export default function ControlPanel() {
               <input
                 type="number"
                 value={syringeVolume}
-                onChange={(e) => setSyringeVolume(Math.min(10, Math.max(0, Number.parseFloat(e.target.value) || 0)))}
+                onChange={(e) =>
+                  setSyringeVolume(Math.min(2.5, Math.max(0, Number.parseFloat(e.target.value) || 0)))
+                }
                 min="0"
-                max="10"
+                max="2.5"
                 step="0.1"
                 className="w-24 px-3 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
               />

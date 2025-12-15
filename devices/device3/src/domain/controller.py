@@ -78,16 +78,21 @@ class DeviceController:
             if syringe_status:
                 busy_flag = syringe_status.get("busy")
                 vel = syringe_status.get("actual_velocity")
+                vol = syringe_status.get("volume_ml")
+                # Update live volume first
+                if isinstance(vol, (int, float)):
+                    self.state.syringe_volume_ml = vol
+                # Clear busy when drive reports idle or we hit target within tolerance
                 if busy_flag == 1:
                     self.state.syringe_busy = True
                 elif busy_flag == 0:
-                    # Clear busy only when drive reports idle and velocity is effectively zero
-                    if vel is None or abs(float(vel)) < 1.0:
+                    reached_target = False
+                    if isinstance(vol, (int, float)) and isinstance(self.state.syringe_target_ml, (int, float)):
+                        if abs(vol - self.state.syringe_target_ml) <= 0.02:
+                            reached_target = True
+                    if reached_target or vel is None or abs(float(vel)) < 1.0:
                         self.state.syringe_busy = False
-                # keep last busy value if busy_flag is None/unknown
-                vol = syringe_status.get("volume_ml")
-                if isinstance(vol, (int, float)):
-                    self.state.syringe_volume_ml = vol
+                        self.state.syringe_target_ml = None
             # If we failed to read status, keep the previous syringe flags so UI doesn't flap to idle.
             # update cached UI fields
             self.state.relay_states = dict(self.relay_states)
