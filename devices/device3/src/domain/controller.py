@@ -77,8 +77,7 @@ class DeviceController:
             if syringe_status:
                 self.state.syringe_busy = bool(syringe_status.get("busy"))
                 self.state.syringe_volume_ml = syringe_status.get("volume_ml")
-            else:
-                self.state.syringe_busy = False
+            # If we failed to read status, keep the previous syringe flags so UI doesn't flap to idle.
             # update cached UI fields
             self.state.relay_states = dict(self.relay_states)
             self.state.rotary_port = self.rotary_port
