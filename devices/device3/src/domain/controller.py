@@ -125,6 +125,20 @@ class DeviceController:
         self._ensure_manual_allowed()
         return self._set_rotary_port(port, allow_when_running=False)
 
+    def set_all_relays(self, enabled: bool) -> bool:
+        """
+        Convenience for bulk relay control using the board's all-on/all-off command.
+        """
+        self._ensure_manual_allowed()
+        ok = self.relays.all_on() if enabled else self.relays.all_off()
+        if ok:
+            for ch in range(1, 9):
+                self.relay_states[ch] = enabled
+            with self._state_lock:
+                self.state.relay_states = dict(self.relay_states)
+            self._broadcast_status()
+        return ok
+
     def move_syringe(self, volume_ml: float, flow_ml_min: float) -> None:
         self._ensure_manual_allowed()
         self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")

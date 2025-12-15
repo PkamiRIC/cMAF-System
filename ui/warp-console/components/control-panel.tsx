@@ -4,7 +4,8 @@ import { useState } from "react"
 import AxisWidget from "./axis-widget"
 import SyringeWidget from "./syringe-widget"
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8003"
+// Ensure we talk directly to the PLC by default.
+const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://warp3plc.local:8003"
 
 async function post(path: string, body?: any) {
   const res = await fetch(`${apiBase}${path}`, {
@@ -56,8 +57,7 @@ export default function ControlPanel() {
 
   const toggleAllRelays = async (state: boolean) => {
     try {
-      const promises = relayStates.map((_, idx) => post(`/relays/${idx + 1}/${state ? "on" : "off"}`))
-      await Promise.all(promises)
+      await post(`/relays/all/${state ? "on" : "off"}`)
       setRelayStates(Array(8).fill(state))
       setError(null)
     } catch (err: any) {
