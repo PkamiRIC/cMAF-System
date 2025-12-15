@@ -12,14 +12,7 @@ export default function SyringeWidget({ volume, maxVolume = 10, isActive = false
   const [displayVolume, setDisplayVolume] = useState(volume)
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDisplayVolume((prev) => {
-        const diff = volume - prev
-        if (Math.abs(diff) < 0.01) return volume
-        return prev + diff * 0.15
-      })
-    }, 50)
-    return () => clearInterval(interval)
+    setDisplayVolume(volume)
   }, [volume])
 
   const percentage = (displayVolume / maxVolume) * 100
