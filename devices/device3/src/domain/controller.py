@@ -75,8 +75,15 @@ class DeviceController:
             except Exception:
                 syringe_status = None
             if syringe_status:
-                self.state.syringe_busy = bool(syringe_status.get("busy"))
-                self.state.syringe_volume_ml = syringe_status.get("volume_ml")
+                busy_flag = syringe_status.get("busy")
+                if busy_flag == 1:
+                    self.state.syringe_busy = True
+                elif busy_flag == 0:
+                    self.state.syringe_busy = False
+                # keep last busy value if busy_flag is None/unknown
+                vol = syringe_status.get("volume_ml")
+                if isinstance(vol, (int, float)):
+                    self.state.syringe_volume_ml = vol
             # If we failed to read status, keep the previous syringe flags so UI doesn't flap to idle.
             # update cached UI fields
             self.state.relay_states = dict(self.relay_states)
