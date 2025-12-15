@@ -30,6 +30,8 @@ class DeviceState:
     syringe_busy: bool = False
     syringe_volume_ml: Optional[float] = None
     syringe_target_ml: Optional[float] = None
+    x_target_mm: Optional[float] = None
+    z_target_mm: Optional[float] = None
 
 
 class DeviceController:
@@ -200,6 +202,48 @@ class DeviceController:
             self.state.syringe_busy = False
             self.state.syringe_volume_ml = 0.0
         self._broadcast_status()
+
+    # ---------------------------------------------------
+    # AXIS MANUAL CONTROL
+    # ---------------------------------------------------
+    def move_axis(self, axis: str, position_mm: float, rpm: float) -> None:
+        self._ensure_manual_allowed()
+        axis_norm = axis.upper()
+        if axis_norm == "Z":
+            target = self._clamp(position_mm, self.config.vertical_axis.min_mm, self.config.vertical_axis.max_mm)
+            driver = self.vertical_axis
+            log_label = "Vertical"
+            target_field = "z_target_mm"
+        elif axis_norm == "X":
+            self._assert_horizontal_allowed()
+            target = self._clamp(position_mm, self.config.horizontal_axis.min_mm, self.config.horizontal_axis.max_mm)
+            driver = self.horizontal_axis
+            log_label = "Horizontal"
+            target_field = "x_target_mm"
+        else:
+            raise ValueError("axis must be X or Z")
+        self._log(f"[Axis {log_label}] move to {target:.2f} mm @ {rpm:.2f} rpm")
+        with self._state_lock:
+            setattr(self.state, target_field, target)
+        driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
+
+    def home_axis(self, axis: str) -> None:
+        self._ensure_manual_allowed()
+        axis_norm = axis.upper()
+        if axis_norm == "Z":
+            self._home_vertical_axis()
+        elif axis_norm == "X":
+            self._home_horizontal_axis()
+        else:
+            raise ValueError("axis must be X or Z")
+
+    @staticmethod
+    def _clamp(value: float, min_v: Optional[float], max_v: Optional[float]) -> float:
+        if min_v is not None:
+            value = max(min_v, value)
+        if max_v is not None:
+            value = min(max_v, value)
+        return value
 
     def home_all(self) -> None:
         """

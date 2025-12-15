@@ -32,6 +32,8 @@ export default function ControlPanel() {
   const [verticalFault, setVerticalFault] = useState(false)
   const [verticalPosition, setVerticalPosition] = useState(50.0)
   const [verticalSpeed, setVerticalSpeed] = useState(5.0)
+  const verticalMin = 0
+  const verticalMax = 33
 
   const [horizontalPos, setHorizontalPos] = useState(60.0)
   const [horizontalTarget, setHorizontalTarget] = useState(100.0)
@@ -41,6 +43,8 @@ export default function ControlPanel() {
   const [horizontalFault, setHorizontalFault] = useState(false)
   const [horizontalPosition, setHorizontalPosition] = useState(100.0)
   const [horizontalSpeed, setHorizontalSpeed] = useState(5.0)
+  const horizontalMin = 0
+  const horizontalMax = 300
 
   const [syringeVolume, setSyringeVolume] = useState(2.5)
   const [flowRate, setFlowRate] = useState(1.0)
@@ -103,6 +107,26 @@ export default function ControlPanel() {
     }
   }
 
+  const clamp = (val: number, min: number, max: number) => Math.min(max, Math.max(min, val))
+
+  const moveAxis = async (axis: "X" | "Z", position: number, rpm: number) => {
+    try {
+      await post(`/axis/${axis}/move`, { position_mm: position, rpm })
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || `${axis} move failed`)
+    }
+  }
+
+  const homeAxis = async (axis: "X" | "Z") => {
+    try {
+      await post(`/axis/${axis}/home`)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || `${axis} home failed`)
+    }
+  }
+
   // Poll status so syringe activity reflects the real driver status.
   useEffect(() => {
     let cancelled = false
@@ -135,20 +159,35 @@ export default function ControlPanel() {
           name="Vertical Axis – Device 3"
           orientation="vertical"
           positionMm={verticalPos}
-          minMm={0}
-          maxMm={200}
+          minMm={verticalMin}
+          maxMm={verticalMax}
           targetMm={verticalTarget}
           velocityMmPerS={verticalVelocity}
           homed={verticalHomed}
           enabled={verticalEnabled}
           fault={verticalFault}
-          onPosition1={() => setVerticalPos(50)}
-          onPosition2={() => setVerticalPos(100)}
-          onPosition3={() => setVerticalPos(150)}
-          onHome={() => setVerticalPos(0)}
+          onPosition1={() => {
+            const target = clamp(0, verticalMin, verticalMax)
+            setVerticalPos(target)
+            moveAxis("Z", target, verticalSpeed)
+          }}
+          onPosition2={() => {
+            const target = clamp(15, verticalMin, verticalMax)
+            setVerticalPos(target)
+            moveAxis("Z", target, verticalSpeed)
+          }}
+          onPosition3={() => {
+            const target = clamp(33, verticalMin, verticalMax)
+            setVerticalPos(target)
+            moveAxis("Z", target, verticalSpeed)
+          }}
+          onHome={() => {
+            setVerticalPos(verticalMin)
+            homeAxis("Z")
+          }}
           position={verticalPosition}
           speed={verticalSpeed}
-          onPositionChange={setVerticalPosition}
+          onPositionChange={(val) => setVerticalPosition(clamp(val, verticalMin, verticalMax))}
           onSpeedChange={setVerticalSpeed}
         />
 
@@ -157,20 +196,35 @@ export default function ControlPanel() {
           name="Horizontal Axis – Device 3"
           orientation="horizontal"
           positionMm={horizontalPos}
-          minMm={0}
-          maxMm={300}
+          minMm={horizontalMin}
+          maxMm={horizontalMax}
           targetMm={horizontalTarget}
           velocityMmPerS={horizontalVelocity}
           homed={horizontalHomed}
           enabled={horizontalEnabled}
           fault={horizontalFault}
-          onPosition1={() => setHorizontalPos(100)}
-          onPosition2={() => setHorizontalPos(200)}
-          onPosition3={() => setHorizontalPos(280)}
-          onHome={() => setHorizontalPos(0)}
+          onPosition1={() => {
+            const target = clamp(100, horizontalMin, horizontalMax)
+            setHorizontalPos(target)
+            moveAxis("X", target, horizontalSpeed)
+          }}
+          onPosition2={() => {
+            const target = clamp(200, horizontalMin, horizontalMax)
+            setHorizontalPos(target)
+            moveAxis("X", target, horizontalSpeed)
+          }}
+          onPosition3={() => {
+            const target = clamp(280, horizontalMin, horizontalMax)
+            setHorizontalPos(target)
+            moveAxis("X", target, horizontalSpeed)
+          }}
+          onHome={() => {
+            setHorizontalPos(horizontalMin)
+            homeAxis("X")
+          }}
           position={horizontalPosition}
           speed={horizontalSpeed}
-          onPositionChange={setHorizontalPosition}
+          onPositionChange={(val) => setHorizontalPosition(clamp(val, horizontalMin, horizontalMax))}
           onSpeedChange={setHorizontalSpeed}
         />
       </div>

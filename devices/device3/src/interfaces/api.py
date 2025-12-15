@@ -104,6 +104,22 @@ def create_app(config: DeviceConfig, config_path: str):
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
 
+    @app.post("/axis/{axis}/move")
+    def axis_move(axis: Literal["X", "Z", "x", "z"], position_mm: float, rpm: float):
+        try:
+            controller.move_axis(axis, position_mm, rpm)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/axis/{axis}/home")
+    def axis_home(axis: Literal["X", "Z", "x", "z"]):
+        try:
+            controller.home_axis(axis)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
     @app.get("/events/sse")
     async def sse():
         queue: asyncio.Queue = asyncio.Queue()
