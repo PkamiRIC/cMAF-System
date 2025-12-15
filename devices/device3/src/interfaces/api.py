@@ -88,6 +88,22 @@ def create_app(config: DeviceConfig, config_path: str):
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
 
+    @app.post("/syringe/stop")
+    def syringe_stop():
+        try:
+            controller.stop_syringe()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/syringe/home")
+    def syringe_home():
+        try:
+            controller.home_syringe()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
     @app.get("/events/sse")
     async def sse():
         queue: asyncio.Queue = asyncio.Queue()

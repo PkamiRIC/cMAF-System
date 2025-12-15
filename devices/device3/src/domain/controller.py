@@ -27,6 +27,8 @@ class DeviceState:
     relay_states: dict = field(default_factory=dict)
     rotary_port: Optional[int] = None
     logs: list = field(default_factory=list)
+    syringe_busy: bool = False
+    syringe_volume_ml: Optional[float] = None
 
 
 class DeviceController:
@@ -67,6 +69,16 @@ class DeviceController:
             self.state.pressure_bar = self.io.read_pressure()
             self.state.flow_lpm = self.io.read_flow()
             self.state.total_volume_l = self.io.read_volume()
+            # syringe status for UI
+            try:
+                syringe_status = self.syringe.read_status()
+            except Exception:
+                syringe_status = None
+            if syringe_status:
+                self.state.syringe_busy = bool(syringe_status.get("busy"))
+                self.state.syringe_volume_ml = syringe_status.get("volume_ml")
+            else:
+                self.state.syringe_busy = False
             # update cached UI fields
             self.state.relay_states = dict(self.relay_states)
             self.state.rotary_port = self.rotary_port
@@ -142,7 +154,32 @@ class DeviceController:
     def move_syringe(self, volume_ml: float, flow_ml_min: float) -> None:
         self._ensure_manual_allowed()
         self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")
+        with self._state_lock:
+            self.state.syringe_busy = True
         self.syringe.goto_absolute(volume_ml, flow_ml_min)
+        with self._state_lock:
+            self.state.syringe_volume_ml = volume_ml
+
+    def stop_syringe(self) -> None:
+        self._ensure_manual_allowed()
+        self._log("[Syringe] stop request")
+        ok = self.syringe.stop_motion()
+        if not ok:
+            raise RuntimeError("Syringe stop failed")
+        with self._state_lock:
+            self.state.syringe_busy = False
+        self._broadcast_status()
+
+    def home_syringe(self) -> None:
+        self._ensure_manual_allowed()
+        self._log("[Syringe] homing")
+        with self._state_lock:
+            self.state.syringe_busy = True
+        self.syringe.home(stop_flag=self._stop_event.is_set)
+        with self._state_lock:
+            self.state.syringe_busy = False
+            self.state.syringe_volume_ml = 0.0
+        self._broadcast_status()
 
     def home_all(self) -> None:
         """

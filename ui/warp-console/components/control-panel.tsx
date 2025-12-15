@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import type { DeviceStatus } from "./status-display"
 import AxisWidget from "./axis-widget"
 import SyringeWidget from "./syringe-widget"
 
@@ -14,6 +15,12 @@ async function post(path: string, body?: any) {
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) throw new Error(`POST ${path} failed (${res.status})`)
+}
+
+async function fetchStatus(): Promise<DeviceStatus> {
+  const res = await fetch(`${apiBase}/status`)
+  if (!res.ok) throw new Error(`status failed (${res.status})`)
+  return res.json()
 }
 
 export default function ControlPanel() {
@@ -68,12 +75,56 @@ export default function ControlPanel() {
   const handleSyringeMove = async (target: number) => {
     try {
       await post("/syringe/move", { volume_ml: target, flow_ml_min: flowRate })
-      setIsSyringeActive(target !== 0)
+      setIsSyringeActive(true)
       setError(null)
     } catch (err: any) {
       setError(err?.message || "Syringe command failed")
     }
   }
+
+  const handleSyringeStop = async () => {
+    try {
+      await post("/syringe/stop")
+      setIsSyringeActive(false)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Syringe stop failed")
+    }
+  }
+
+  const handleSyringeHome = async () => {
+    try {
+      await post("/syringe/home")
+      setIsSyringeActive(true)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Syringe home failed")
+    }
+  }
+
+  // Poll status so syringe activity reflects the real driver status.
+  useEffect(() => {
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const data = await fetchStatus()
+        if (!cancelled) {
+          setIsSyringeActive(Boolean(data.syringe_busy))
+          if (typeof data.syringe_volume_ml === "number") {
+            setSyringeVolume(Number(data.syringe_volume_ml.toFixed(2)))
+          }
+        }
+      } catch (err) {
+        // Swallow polling errors; UI handles command errors separately.
+      }
+    }
+    tick()
+    const id = setInterval(tick, 2000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -163,22 +214,24 @@ export default function ControlPanel() {
               />
             </div>
 
-            <div className="flex gap-3 pt-2">
+            <div className="grid grid-cols-3 gap-3 pt-2">
               <button
                 onClick={() => handleSyringeMove(syringeVolume)}
-                className="flex-1 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-primary/20"
+                className="px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-primary/20"
               >
                 Draw
               </button>
               <button
-                onClick={() => handleSyringeMove(0)}
-                className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all shadow-md ${
-                  isSyringeActive
-                    ? "bg-destructive text-destructive-foreground hover:opacity-90 shadow-destructive/20"
-                    : "bg-primary text-primary-foreground hover:opacity-90 shadow-primary/20"
-                }`}
+                onClick={handleSyringeStop}
+                className="px-4 py-2.5 bg-destructive text-destructive-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-destructive/20"
               >
-                {isSyringeActive ? "Stop" : "Dispense"}
+                Stop
+              </button>
+              <button
+                onClick={handleSyringeHome}
+                className="px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg font-medium hover:bg-muted transition-all shadow-md"
+              >
+                Home
               </button>
             </div>
           </div>

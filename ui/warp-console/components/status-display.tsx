@@ -10,6 +10,8 @@ export type DeviceStatus = {
   sequence_step?: string | null
   rotary_port?: number | null
   last_error?: string | null
+  syringe_busy?: boolean
+  syringe_volume_ml?: number | null
 }
 
 // Use an explicit absolute base so requests always hit the PLC.

@@ -106,6 +106,24 @@ class SyringePump:
         command = self._build_command(volume_ml, flow_rate_ml_min)
         self._send_command(command)
 
+    def stop_motion(self) -> bool:
+        """
+        Best-effort soft stop: read current position and command a move to that point
+        with minimal flow so motion ceases.
+        """
+        status = self.read_status(max_tries=1)
+        if not status:
+            return False
+        try:
+            current_ml = float(status.get("volume_ml", 0.0))
+        except Exception:
+            current_ml = 0.0
+        try:
+            self.goto_absolute(current_ml, 0.1)
+            return True
+        except Exception:
+            return False
+
     def move(self, volume_ml: float, flow_rate_ml_min: float) -> None:
         """Alias kept for compatibility with the old GUI code."""
         self.goto_absolute(volume_ml, flow_rate_ml_min)
