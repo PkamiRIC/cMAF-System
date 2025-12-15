@@ -44,13 +44,17 @@ class RelayBoard:
         hi_reg, lo_reg = (reg >> 8) & 0xFF, reg & 0xFF
         hi_val, lo_val = (value >> 8) & 0xFF, value & 0xFF
         pdu = bytes([self.config.address, 0x06, hi_reg, lo_reg, hi_val, lo_val])
+        return self._write_frame(pdu)
+
+    def _write_frame(self, pdu: bytes, expected_len: int = 8) -> bool:
+        """Send a pre-built PDU with CRC and validate the echo."""
         frame = pdu + self._crc16_modbus(pdu)
         with self._open() as serial_port:
             serial_port.reset_input_buffer()
             serial_port.reset_output_buffer()
             serial_port.write(frame)
-            resp = serial_port.read(8)  # expect 8-byte echo for 0x06
-            return len(resp) == 8 and resp[:6] == pdu
+            resp = serial_port.read(expected_len)
+            return len(resp) == expected_len and resp[: len(pdu)] == pdu
 
     def on(self, relay_num: int) -> bool:
         if not (1 <= relay_num <= 8):
@@ -63,7 +67,17 @@ class RelayBoard:
         return self._write_register(relay_num, 0x0200)
 
     def all_on(self) -> bool:
-        return self._write_register(0x0000, 0x0700)
+        """
+        All ON command frame (addressed): addr 0x??, 06, 00, 00, 07, 00, CRC16.
+        For addr=0x02 this is: 02 06 00 00 07 00 8B C9
+        """
+        pdu = bytes([self.config.address, 0x06, 0x00, 0x00, 0x07, 0x00])
+        return self._write_frame(pdu)
 
     def all_off(self) -> bool:
-        return self._write_register(0x0000, 0x0800)
+        """
+        All OFF command frame (addressed): addr 0x??, 06, 00, 00, 08, 00, CRC16.
+        For addr=0x02 this is: 02 06 00 00 08 00 8E 39
+        """
+        pdu = bytes([self.config.address, 0x06, 0x00, 0x00, 0x08, 0x00])
+        return self._write_frame(pdu)
