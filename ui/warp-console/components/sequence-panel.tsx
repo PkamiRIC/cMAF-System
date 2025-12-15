@@ -3,7 +3,7 @@
 import type { DeviceStatus } from "./status-display"
 
 interface SequencePanelProps {
-  activeSequence: "seq1" | "seq2" | "seq3"
+  activeSequence: "seq1" | "seq2" | "seq3" | null
   setActiveSequence: (seq: "seq1" | "seq2" | "seq3") => void
   status?: DeviceStatus
   error?: string | null
@@ -51,7 +51,13 @@ export default function SequencePanel({ activeSequence, setActiveSequence, statu
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground font-medium">Active:</span>
           <span className="text-sm text-foreground font-semibold">
-            {activeSequence === "seq1" ? "Sequence 1" : activeSequence === "seq2" ? "Sequence 2" : "Sequence 3"}
+            {activeSequence === "seq1"
+              ? "Sequence 1"
+              : activeSequence === "seq2"
+              ? "Sequence 2"
+              : activeSequence === "seq3"
+              ? "Sequence 3"
+              : "None"}
           </span>
         </div>
         <div className="flex justify-between items-center">

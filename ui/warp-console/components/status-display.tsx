@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import { useEffect, useMemo, useState } from "react"
 import RotaryValveWidget from "./rotary-valve-widget"
@@ -12,7 +12,8 @@ export type DeviceStatus = {
   last_error?: string | null
 }
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8003"
+// Use an explicit absolute base so requests always hit the PLC.
+const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://warp3plc.local:8003"
 
 async function post(path: string) {
   const res = await fetch(`${apiBase}${path}`, { method: "POST" })
@@ -28,10 +29,11 @@ async function fetchStatus(): Promise<DeviceStatus> {
 export default function StatusDisplay() {
   const [status, setStatus] = useState<DeviceStatus>({})
   const [error, setError] = useState<string | null>(null)
-  const activeSequence = useMemo<"seq1" | "seq2" | "seq3">(() => {
+  const activeSequence = useMemo<"seq1" | "seq2" | "seq3" | null>(() => {
     if (status.current_sequence?.toLowerCase().includes("2")) return "seq2"
     if (status.current_sequence?.toLowerCase().includes("3")) return "seq3"
-    return "seq1"
+    if (status.current_sequence?.toLowerCase().includes("1")) return "seq1"
+    return null
   }, [status.current_sequence])
 
   useEffect(() => {
