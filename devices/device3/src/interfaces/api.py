@@ -56,18 +56,18 @@ def create_app(config: DeviceConfig, config_path: str):
         controller.emergency_stop()
         return {"ok": True}
 
-    @app.post("/relays/{channel}/{state}")
-    def relay(channel: int, state: Literal["on", "off"]):
-        try:
-            ok = controller.set_relay(channel, state == "on")
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        return {"ok": ok}
-
     @app.post("/relays/all/{state}")
     def relays_all(state: Literal["on", "off"]):
         try:
             ok = controller.set_all_relays(state == "on")
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": ok}
+
+    @app.post("/relays/{channel:int}/{state}")
+    def relay(channel: int, state: Literal["on", "off"]):
+        try:
+            ok = controller.set_relay(channel, state == "on")
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": ok}
