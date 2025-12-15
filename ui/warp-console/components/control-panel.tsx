@@ -45,6 +45,7 @@ export default function ControlPanel() {
   const [syringeVolume, setSyringeVolume] = useState(2.5)
   const [flowRate, setFlowRate] = useState(1.0)
   const [isSyringeActive, setIsSyringeActive] = useState(false)
+  const [syringeLiveVolume, setSyringeLiveVolume] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const [relayStates, setRelayStates] = useState<boolean[]>(Array(8).fill(false))
@@ -111,7 +112,7 @@ export default function ControlPanel() {
         if (!cancelled) {
           setIsSyringeActive(Boolean(data.syringe_busy))
           if (typeof data.syringe_volume_ml === "number") {
-            setSyringeVolume(Number(data.syringe_volume_ml.toFixed(2)))
+            setSyringeLiveVolume(Number(data.syringe_volume_ml.toFixed(2)))
           }
         }
       } catch (err) {
@@ -176,7 +177,7 @@ export default function ControlPanel() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="premium-card p-6 flex items-center justify-center">
-          <SyringeWidget volume={syringeVolume} maxVolume={10} isActive={isSyringeActive} />
+          <SyringeWidget volume={syringeLiveVolume ?? syringeVolume} maxVolume={10} isActive={isSyringeActive} />
         </div>
 
         <div className="premium-card p-6 space-y-4">
