@@ -207,7 +207,9 @@ class DeviceController:
     # AXIS MANUAL CONTROL
     # ---------------------------------------------------
     def move_axis(self, axis: str, position_mm: float, rpm: float) -> None:
-        self._ensure_manual_allowed()
+        # Allow manual moves when not running a user sequence (idle or homing)
+        if self.state.state == "RUNNING" and self.state.current_sequence not in {None, "homing"}:
+            raise RuntimeError("Manual moves locked while a sequence is running")
         axis_norm = axis.upper()
         if axis_norm == "Z":
             target = self._clamp(position_mm, self.config.vertical_axis.min_mm, self.config.vertical_axis.max_mm)
@@ -228,7 +230,8 @@ class DeviceController:
         driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
 
     def home_axis(self, axis: str) -> None:
-        self._ensure_manual_allowed()
+        if self.state.state == "RUNNING" and self.state.current_sequence not in {None, "homing"}:
+            raise RuntimeError("Manual moves locked while a sequence is running")
         axis_norm = axis.upper()
         if axis_norm == "Z":
             self._home_vertical_axis()
