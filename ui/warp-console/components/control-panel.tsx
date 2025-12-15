@@ -120,7 +120,7 @@ export default function ControlPanel() {
       }
     }
     tick()
-    const id = setInterval(tick, 500)
+    const id = setInterval(tick, 1000)
     return () => {
       cancelled = true
       clearInterval(id)
