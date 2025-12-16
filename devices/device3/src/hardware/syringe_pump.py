@@ -2,7 +2,6 @@ import struct
 import time
 from typing import Optional
 import threading
-
 import serial
 
 from infra.config import SyringeConfig, AxisConfig
@@ -10,7 +9,6 @@ from infra.config import SyringeConfig, AxisConfig
 
 class SyringePump:
     _port_locks: dict[str, threading.Lock] = {}
-
     def __init__(self, config: SyringeConfig | AxisConfig) -> None:
         self.config = config
         self.target_position = 0
@@ -104,14 +102,13 @@ class SyringePump:
         return base_command + crc
 
     def _send_command(self, command: bytes) -> bytes:
-        with self._port_lock():
-            with self._open_serial(timeout=0.5) as ser:
-                ser.reset_input_buffer()
-                ser.reset_output_buffer()
-                ser.flush()
-                ser.write(command)
-                time.sleep(0.5)
-                return ser.read(30)
+        with self._open_serial(timeout=0.5) as ser:
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+            ser.flush()
+            ser.write(command)
+            time.sleep(0.5)
+            return ser.read(30)
 
     # Public API -------------------------------------------------
     def goto_absolute(self, volume_ml: float, flow_rate_ml_min: float) -> None:
@@ -153,14 +150,13 @@ class SyringePump:
         while tries < max_tries:
             tries += 1
             try:
-                with self._port_lock():
-                    with self._open_serial(timeout=2.0) as ser:
-                        ser.reset_input_buffer()
-                        ser.reset_output_buffer()
-                        ser.flush()
-                        ser.write(poll)
-                        time.sleep(0.2)
-                        resp = ser.read(19)
+                with self._open_serial(timeout=2.0) as ser:
+                    ser.reset_input_buffer()
+                    ser.reset_output_buffer()
+                    ser.flush()
+                    ser.write(poll)
+                    time.sleep(0.2)
+                    resp = ser.read(19)
             except Exception:
                 time.sleep(0.2)
                 continue
@@ -203,38 +199,18 @@ class SyringePump:
 
         return None
 
-    def wait_until_idle(
-        self,
-        timeout: Optional[float] = None,
-        stop_flag: Optional[callable] = None,
-        tolerance_steps: int = 10,
-    ) -> bool:
+    def wait_until_idle(self, timeout: Optional[float] = None, stop_flag: Optional[callable] = None) -> bool:
         """
         Wait until the drive reports idle.
         Returns False on timeout or if stop_flag() becomes True.
         """
         start_time = time.time()
-        stable_ok = 0
         while True:
             if stop_flag and stop_flag():
                 return False
             status = self.read_status()
             if status is not None and status.get("busy") == 0:
-                # Require position to be near target to avoid early false idle.
-                target_steps = getattr(self, "target_position", None)
-                if target_steps is None:
-                    stable_ok += 1
-                else:
-                    try:
-                        pos = int(status.get("actual_position", 0))
-                        if abs(pos - target_steps) <= tolerance_steps:
-                            stable_ok += 1
-                        else:
-                            stable_ok = 0
-                    except Exception:
-                        stable_ok += 1
-                if stable_ok >= 2:
-                    return True
+                return True
             if timeout is not None and (time.time() - start_time) >= timeout:
                 return False
             time.sleep(0.5)
@@ -275,24 +251,20 @@ class SyringePump:
         cmd2 = _make_home_cmd(0x02)
 
         try:
-            with self._port_lock():
-                with self._open_serial(timeout=1.0) as ser:
-                    ser.reset_input_buffer()
-                    ser.reset_output_buffer()
+            with self._open_serial(timeout=1.0) as ser:
+                ser.reset_input_buffer()
+                ser.reset_output_buffer()
 
-                    ser.write(cmd1)
-                    ser.flush()
-                    time.sleep(0.2)
-                    ser.read(8)
+                ser.write(cmd1)
+                ser.flush()
+                time.sleep(0.2)
+                ser.read(8)
 
-                    ser.write(cmd2)
-                    ser.flush()
-                    time.sleep(0.2)
-                    ser.read(8)
-        except Exception as exc:
-            # Do NOT silently ignore: callers must know homing was not issued.
-            raise RuntimeError(
-                f"Home command failed on {self.config.port} addr={self.config.address}: {exc}"
-            ) from exc
+                ser.write(cmd2)
+                ser.flush()
+                time.sleep(0.2)
+                ser.read(8)
+        except Exception:
+            return
 
         self.wait_until_idle(timeout=60, stop_flag=stop_flag)
