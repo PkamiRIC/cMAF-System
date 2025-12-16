@@ -8,7 +8,7 @@ interface SyringeWidgetProps {
   isActive?: boolean
 }
 
-export default function SyringeWidget({ volume, maxVolume = 10, isActive = false }: SyringeWidgetProps) {
+export default function SyringeWidget({ volume, maxVolume = 2.5, isActive = false }: SyringeWidgetProps) {
   const [displayVolume, setDisplayVolume] = useState(volume)
 
   useEffect(() => {
