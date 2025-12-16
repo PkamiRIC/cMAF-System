@@ -151,6 +151,7 @@ class DeviceController:
         with self._state_lock:
             self.state.syringe_busy = True
             self.state.syringe_target_ml = volume_ml
+        self._broadcast_status()
         try:
             self.syringe.goto_absolute(volume_ml, flow_ml_min)
             idle = self.syringe.wait_until_idle(timeout=120, stop_flag=self._stop_event.is_set)
