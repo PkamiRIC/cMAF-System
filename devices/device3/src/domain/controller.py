@@ -346,7 +346,7 @@ class DeviceController:
     def _run_homing(self) -> None:
         try:
             self._check_stop()
-            #self._prepare_outputs_for_homing()
+            self._prepare_outputs_for_homing()
 
             self._before_step("Homing vertical axis")
             self._check_stop()
