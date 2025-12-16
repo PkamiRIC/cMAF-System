@@ -368,17 +368,14 @@ class DeviceController:
             self._before_step("Homing vertical axis")
             self._check_stop()
             self._home_vertical_axis()
-            self._before_step("Vertical axis homed")
 
             self._before_step("Homing horizontal axis")
             self._check_stop()
-            self._home_horizontal_axis(allow_guard_override=True)
-            self._before_step("Horizontal axis homed")
+            self._home_horizontal_axis()
 
             self._before_step("Homing syringe pump")
             self._check_stop()
             self.syringe.home(stop_flag=self._stop_event.is_set)
-            self._before_step("Syringe homed")
 
             with self._state_lock:
                 self.state.state = "IDLE"
@@ -408,14 +405,13 @@ class DeviceController:
                 raise RuntimeError(f"Vertical axis unavailable: {exc}")
         self.vertical_axis.home(stop_flag=self._stop_event.is_set)
 
-    def _home_horizontal_axis(self, allow_guard_override: bool = False) -> None:
+    def _home_horizontal_axis(self) -> None:
         """
         Placeholder to be wired to the real horizontal axis driver.
         Replace this implementation with your motion controller call,
         e.g., horizontal_driver.home_blocking().
         """
-        if not allow_guard_override:
-            self._assert_horizontal_allowed()
+        self._assert_horizontal_allowed()
         if not self.horizontal_axis.ready:
             try:
                 self.horizontal_axis.connect()
