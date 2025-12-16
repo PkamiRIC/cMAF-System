@@ -389,6 +389,7 @@ class DeviceController:
                 self.state.current_sequence = None
                 self.state.sequence_step = None
                 self.state.stop_requested = False
+            self._broadcast_status()
             self._stop_event.clear()
 
     def _home_vertical_axis(self) -> None:
