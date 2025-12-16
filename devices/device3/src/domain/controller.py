@@ -368,14 +368,17 @@ class DeviceController:
             self._before_step("Homing vertical axis")
             self._check_stop()
             self._home_vertical_axis()
+            self._before_step("Vertical axis homed")
 
             self._before_step("Homing horizontal axis")
             self._check_stop()
             self._home_horizontal_axis(allow_guard_override=True)
+            self._before_step("Horizontal axis homed")
 
             self._before_step("Homing syringe pump")
             self._check_stop()
             self.syringe.home(stop_flag=self._stop_event.is_set)
+            self._before_step("Syringe homed")
 
             with self._state_lock:
                 self.state.state = "IDLE"
