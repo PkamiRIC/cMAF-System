@@ -1,4 +1,5 @@
 import threading
+import time
 import asyncio
 import json
 from dataclasses import dataclass, field, asdict
@@ -333,6 +334,7 @@ class DeviceController:
             else:
                 for ch in range(1, 9):
                     self.relays.off(ch)
+            time.sleep(0.5)  # Allow relays to settle
         except Exception:
             # Keep going even if one relay write fails
             pass
