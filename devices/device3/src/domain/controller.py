@@ -57,6 +57,10 @@ class DeviceController:
         self.relay_states = {ch: False for ch in range(1, 9)}
         self.rotary_port: Optional[int] = None
 
+        # --- Live syringe status polling ---
+        self._syringe_poll_stop = threading.Event()
+        self._syringe_poll_thread: Optional[threading.Thread] = None
+
         # Best-effort initial connections for axes
         try:
             self.vertical_axis.connect()
@@ -64,6 +68,9 @@ class DeviceController:
         except Exception:
             # Leave drivers unready; homing will fail with a clear message
             pass
+
+        # Start syringe live poller (busy + volume)
+        self._start_syringe_poller(interval_s=0.25)
 
     # ---------------------------------------------------
     # STATUS
@@ -146,23 +153,24 @@ class DeviceController:
         return ok
 
     def move_syringe(self, volume_ml: float, flow_ml_min: float) -> None:
+        """
+        Manual syringe move. Do NOT force syringe_busy here; live poller drives it.
+        We only record the target for UI display.
+        """
         self._ensure_manual_allowed()
         self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")
         with self._state_lock:
-            self.state.syringe_busy = True
             self.state.syringe_target_ml = volume_ml
         self._broadcast_status()
-        try:
-            self.syringe.goto_absolute(volume_ml, flow_ml_min)
-            idle = self.syringe.wait_until_idle(timeout=120, stop_flag=self._stop_event.is_set)
-            if not idle:
-                raise RuntimeError("Syringe move timed out")
-        finally:
-            # Always clear busy so UI status returns to idle.
-            with self._state_lock:
-                self.state.syringe_busy = False
-                self.state.syringe_volume_ml = volume_ml
-            self._broadcast_status()
+
+        self.syringe.goto_absolute(volume_ml, flow_ml_min)
+
+        idle = self.syringe.wait_until_idle(timeout=120, stop_flag=self._stop_event.is_set)
+        if not idle:
+            raise RuntimeError("Syringe move timed out")
+
+        # Do not overwrite syringe_volume_ml here; poller updates it continuously.
+        self._broadcast_status()
 
     def stop_syringe(self) -> None:
         # Allow stopping even during homing sequence
@@ -173,20 +181,17 @@ class DeviceController:
         ok = self.syringe.stop_motion()
         if not ok:
             raise RuntimeError("Syringe stop failed")
-        with self._state_lock:
-            self.state.syringe_busy = False
         self._stop_event.clear()
+        # Do not force syringe_busy; poller will update based on real status.
         self._broadcast_status()
 
     def home_syringe(self) -> None:
         self._ensure_manual_allowed()
         self._log("[Syringe] homing")
-        with self._state_lock:
-            self.state.syringe_busy = True
+        # Do not force syringe_busy; poller will reflect true motion.
         self.syringe.home(stop_flag=self._stop_event.is_set)
         with self._state_lock:
-            self.state.syringe_busy = False
-            self.state.syringe_volume_ml = 0.0
+            self.state.syringe_target_ml = 0.0
         self._broadcast_status()
 
     # ---------------------------------------------------
@@ -253,6 +258,93 @@ class DeviceController:
         self._stop_event.clear()
         self._sequence_thread = threading.Thread(target=self._run_homing, daemon=True)
         self._sequence_thread.start()
+
+    # ---------------------------------------------------
+    # Syringe Live Poller
+    # ---------------------------------------------------
+    def _start_syringe_poller(self, interval_s: float = 0.25) -> None:
+        if self._syringe_poll_thread and self._syringe_poll_thread.is_alive():
+            return
+        self._syringe_poll_stop.clear()
+        self._syringe_poll_thread = threading.Thread(
+            target=self._syringe_poller_loop, args=(interval_s,), daemon=True
+        )
+        self._syringe_poll_thread.start()
+
+    def _syringe_poller_loop(self, interval_s: float) -> None:
+        """
+        Continuously poll syringe status and derive ACTIVE/IDLE from motion evidence.
+
+        Why not just "busy bit"?
+        Many drives clear their "busy" flag once the command is latched, even while motion continues.
+        Motion evidence is more robust: standstill bit + actual velocity + flow.
+        """
+        idle_streak = 0
+        last_active: Optional[bool] = None
+        last_vol: Optional[float] = None
+
+        # thresholds: tune if needed
+        vel_thresh_steps = 5
+        flow_thresh_ml_min = 0.01
+        idle_debounce_polls = 3  # e.g. 3 * 0.25s = 0.75s stable idle before declaring idle
+
+        while not self._syringe_poll_stop.is_set():
+            try:
+                st = self.syringe.read_status()
+                if st is None:
+                    time.sleep(interval_s)
+                    continue
+
+                busy_bit = int(st.get("busy", 0))
+                standstill_bit = int(st.get("standstill", 1))
+                actual_velocity = int(st.get("actual_velocity", 0))
+                flow_ml_min = float(st.get("flow_ml_min", 0.0))
+                volume_ml = st.get("volume_ml", None)
+
+                moving = (
+                    busy_bit == 1
+                    or standstill_bit == 0
+                    or abs(actual_velocity) > vel_thresh_steps
+                    or abs(flow_ml_min) > flow_thresh_ml_min
+                )
+
+                if moving:
+                    idle_streak = 0
+                else:
+                    idle_streak += 1
+
+                is_active = moving or idle_streak < idle_debounce_polls
+
+                changed = False
+                with self._state_lock:
+                    if is_active != self.state.syringe_busy:
+                        self.state.syringe_busy = is_active
+                        changed = True
+
+                    if volume_ml is not None:
+                        try:
+                            v = float(volume_ml)
+                        except Exception:
+                            v = None
+                        if v is not None and self.state.syringe_volume_ml != v:
+                            self.state.syringe_volume_ml = v
+                            changed = True
+
+                # Throttle SSE chatter: broadcast only when meaningful change occurs.
+                # Also keep a small additional guard so we don’t rebroadcast identical states.
+                if changed:
+                    self._broadcast_status()
+
+                last_active = is_active
+                last_vol = self.state.syringe_volume_ml
+
+            except Exception as exc:
+                # Do not kill poller; just surface error.
+                with self._state_lock:
+                    self.state.last_error = f"Syringe status poll error: {exc}"
+                self._broadcast_status()
+
+            time.sleep(interval_s)
 
     # ---------------------------------------------------
     # Internals
@@ -385,11 +477,6 @@ class DeviceController:
             self._stop_event.clear()
 
     def _home_vertical_axis(self) -> None:
-        """
-        Placeholder to be wired to the real vertical axis driver.
-        Replace this implementation with your motion controller call,
-        e.g., vertical_driver.home_blocking().
-        """
         if not self.vertical_axis.ready:
             try:
                 self.vertical_axis.connect()
@@ -398,11 +485,6 @@ class DeviceController:
         self.vertical_axis.home(stop_flag=self._stop_event.is_set)
 
     def _home_horizontal_axis(self) -> None:
-        """
-        Placeholder to be wired to the real horizontal axis driver.
-        Replace this implementation with your motion controller call,
-        e.g., horizontal_driver.home_blocking().
-        """
         self._assert_horizontal_allowed()
         if not self.horizontal_axis.ready:
             try:
