@@ -72,30 +72,6 @@ class DeviceController:
             self.state.pressure_bar = self.io.read_pressure()
             self.state.flow_lpm = self.io.read_flow()
             self.state.total_volume_l = self.io.read_volume()
-            # syringe status for UI
-            try:
-                syringe_status = self.syringe.read_status()
-            except Exception:
-                syringe_status = None
-            if syringe_status:
-                busy_flag = syringe_status.get("busy")
-                vel = syringe_status.get("actual_velocity")
-                vol = syringe_status.get("volume_ml")
-                # Update live volume first
-                if isinstance(vol, (int, float)):
-                    self.state.syringe_volume_ml = vol
-                # Clear busy when drive reports idle or we hit target within tolerance
-                if busy_flag == 1:
-                    self.state.syringe_busy = True
-                elif busy_flag == 0:
-                    reached_target = False
-                    if isinstance(vol, (int, float)) and isinstance(self.state.syringe_target_ml, (int, float)):
-                        if abs(vol - self.state.syringe_target_ml) <= 0.02:
-                            reached_target = True
-                    if reached_target or vel is None or abs(float(vel)) < 1.0:
-                        self.state.syringe_busy = False
-                        self.state.syringe_target_ml = None
-            # If we failed to read status, keep the previous syringe flags so UI doesn't flap to idle.
             # update cached UI fields
             self.state.relay_states = dict(self.relay_states)
             self.state.rotary_port = self.rotary_port
@@ -236,8 +212,7 @@ class DeviceController:
         if axis_norm == "Z":
             self._home_vertical_axis()
         elif axis_norm == "X":
-            # Allow manual homing even if vertical position is unknown
-            self._home_horizontal_axis(allow_guard_override=True)
+            self._home_horizontal_axis()
         else:
             raise ValueError("axis must be X or Z")
 
@@ -374,17 +349,14 @@ class DeviceController:
             self._before_step("Homing vertical axis")
             self._check_stop()
             self._home_vertical_axis()
-            self._before_step("Vertical axis homed")
 
             self._before_step("Homing horizontal axis")
             self._check_stop()
-            self._home_horizontal_axis(allow_guard_override=True)
-            self._before_step("Horizontal axis homed")
+            self._home_horizontal_axis()
 
             self._before_step("Homing syringe pump")
             self._check_stop()
             self.syringe.home(stop_flag=self._stop_event.is_set)
-            self._before_step("Syringe homed")
 
             with self._state_lock:
                 self.state.state = "IDLE"
@@ -414,14 +386,13 @@ class DeviceController:
                 raise RuntimeError(f"Vertical axis unavailable: {exc}")
         self.vertical_axis.home(stop_flag=self._stop_event.is_set)
 
-    def _home_horizontal_axis(self, allow_guard_override: bool = False) -> None:
+    def _home_horizontal_axis(self) -> None:
         """
         Placeholder to be wired to the real horizontal axis driver.
         Replace this implementation with your motion controller call,
         e.g., horizontal_driver.home_blocking().
         """
-        if not allow_guard_override:
-            self._assert_horizontal_allowed()
+        self._assert_horizontal_allowed()
         if not self.horizontal_axis.ready:
             try:
                 self.horizontal_axis.connect()
