@@ -351,8 +351,13 @@ class DeviceController:
     def _prepare_outputs_for_homing(self) -> None:
         """Best-effort: switch off relays before moving axes."""
         try:
-            for ch in range(1, 9):
-                self.relays.off(ch)
+            if hasattr(self.relays, "all_off"):
+                self.relays.all_off()
+                for ch in range(1, 9):
+                    self.relay_states[ch] = False
+            else:
+                for ch in range(1, 9):
+                    self.relays.off(ch)
         except Exception:
             # Keep going even if one relay write fails
             pass
