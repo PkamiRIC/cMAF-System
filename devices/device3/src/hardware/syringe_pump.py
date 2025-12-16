@@ -1,6 +1,7 @@
 import struct
 import time
 from typing import Optional
+import threading
 
 import serial
 
@@ -8,9 +9,20 @@ from infra.config import SyringeConfig, AxisConfig
 
 
 class SyringePump:
+    _port_locks: dict[str, threading.Lock] = {}
+
     def __init__(self, config: SyringeConfig | AxisConfig) -> None:
         self.config = config
         self.target_position = 0
+
+    def _port_lock(self) -> threading.Lock:
+        # One lock per serial port path (e.g. /dev/ttyUSB0)
+        key = str(self.config.port)
+        lock = self._port_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            self._port_locks[key] = lock
+        return lock
 
     def _open_serial(self, timeout: Optional[float] = None) -> serial.Serial:
         ser = serial.Serial(
@@ -92,13 +104,14 @@ class SyringePump:
         return base_command + crc
 
     def _send_command(self, command: bytes) -> bytes:
-        with self._open_serial(timeout=0.5) as ser:
-            ser.reset_input_buffer()
-            ser.reset_output_buffer()
-            ser.flush()
-            ser.write(command)
-            time.sleep(0.5)
-            return ser.read(30)
+        with self._port_lock():
+            with self._open_serial(timeout=0.5) as ser:
+                ser.reset_input_buffer()
+                ser.reset_output_buffer()
+                ser.flush()
+                ser.write(command)
+                time.sleep(0.5)
+                return ser.read(30)
 
     # Public API -------------------------------------------------
     def goto_absolute(self, volume_ml: float, flow_rate_ml_min: float) -> None:
@@ -140,13 +153,14 @@ class SyringePump:
         while tries < max_tries:
             tries += 1
             try:
-                with self._open_serial(timeout=2.0) as ser:
-                    ser.reset_input_buffer()
-                    ser.reset_output_buffer()
-                    ser.flush()
-                    ser.write(poll)
-                    time.sleep(0.2)
-                    resp = ser.read(19)
+                with self._port_lock():
+                    with self._open_serial(timeout=2.0) as ser:
+                        ser.reset_input_buffer()
+                        ser.reset_output_buffer()
+                        ser.flush()
+                        ser.write(poll)
+                        time.sleep(0.2)
+                        resp = ser.read(19)
             except Exception:
                 time.sleep(0.2)
                 continue
@@ -241,20 +255,24 @@ class SyringePump:
         cmd2 = _make_home_cmd(0x02)
 
         try:
-            with self._open_serial(timeout=1.0) as ser:
-                ser.reset_input_buffer()
-                ser.reset_output_buffer()
+            with self._port_lock():
+                with self._open_serial(timeout=1.0) as ser:
+                    ser.reset_input_buffer()
+                    ser.reset_output_buffer()
 
-                ser.write(cmd1)
-                ser.flush()
-                time.sleep(0.2)
-                ser.read(8)
+                    ser.write(cmd1)
+                    ser.flush()
+                    time.sleep(0.2)
+                    ser.read(8)
 
-                ser.write(cmd2)
-                ser.flush()
-                time.sleep(0.2)
-                ser.read(8)
-        except Exception:
-            return
+                    ser.write(cmd2)
+                    ser.flush()
+                    time.sleep(0.2)
+                    ser.read(8)
+        except Exception as exc:
+            # Do NOT silently ignore: callers must know homing was not issued.
+            raise RuntimeError(
+                f"Home command failed on {self.config.port} addr={self.config.address}: {exc}"
+            ) from exc
 
         self.wait_until_idle(timeout=60, stop_flag=stop_flag)
