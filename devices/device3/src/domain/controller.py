@@ -151,9 +151,17 @@ class DeviceController:
         with self._state_lock:
             self.state.syringe_busy = True
             self.state.syringe_target_ml = volume_ml
-        self.syringe.goto_absolute(volume_ml, flow_ml_min)
-        with self._state_lock:
-            self.state.syringe_volume_ml = volume_ml
+        try:
+            self.syringe.goto_absolute(volume_ml, flow_ml_min)
+            idle = self.syringe.wait_until_idle(timeout=120, stop_flag=self._stop_event.is_set)
+            if not idle:
+                raise RuntimeError("Syringe move timed out")
+        finally:
+            # Always clear busy so UI status returns to idle.
+            with self._state_lock:
+                self.state.syringe_busy = False
+                self.state.syringe_volume_ml = volume_ml
+            self._broadcast_status()
 
     def stop_syringe(self) -> None:
         # Allow stopping even during homing sequence
