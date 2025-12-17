@@ -140,7 +140,6 @@ class DeviceController:
 
     def set_rotary_port(self, port: int) -> bool:
         self._ensure_manual_allowed()
-        self._log(f"[Rotary] Set port {port}")
         return self._set_rotary_port(port, allow_when_running=False)
 
     def set_all_relays(self, enabled: bool) -> bool:
