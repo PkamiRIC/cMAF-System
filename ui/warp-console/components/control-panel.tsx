@@ -48,6 +48,8 @@ export default function ControlPanel() {
   const [flowRate, setFlowRate] = useState(1.0)
   const [isSyringeActive, setIsSyringeActive] = useState(false)
   const [syringeLiveVolume, setSyringeLiveVolume] = useState<number | null>(null)
+  const [syringeHomed, setSyringeHomed] = useState(false)
+  const [syringeHomedDimmed, setSyringeHomedDimmed] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [relayStates, setRelayStates] = useState<boolean[]>(Array(8).fill(false))
@@ -111,11 +113,6 @@ export default function ControlPanel() {
   const moveAxis = async (axis: "X" | "Z", position: number, rpm: number) => {
     try {
       await post(`/axis/${axis}/move`, { position_mm: position, rpm })
-      if (axis === "Z") {
-        setVerticalHomedDimmed(true)
-      } else {
-        setHorizontalHomedDimmed(true)
-      }
       setError(null)
     } catch (err: any) {
       setError(err?.message || `${axis} move failed`)
@@ -125,13 +122,6 @@ export default function ControlPanel() {
   const homeAxis = async (axis: "X" | "Z") => {
     try {
       await post(`/axis/${axis}/home`)
-      if (axis === "Z") {
-        setVerticalHomed(true)
-        setVerticalHomedDimmed(false)
-      } else {
-        setHorizontalHomed(true)
-        setHorizontalHomedDimmed(false)
-      }
       setError(null)
     } catch (err: any) {
       setError(err?.message || `${axis} home failed`)
@@ -149,6 +139,16 @@ export default function ControlPanel() {
           if (typeof data.syringe_volume_ml === "number") {
             setSyringeLiveVolume(Number(data.syringe_volume_ml.toFixed(2)))
           }
+          // homed flags from backend
+          const zH = Boolean((data as any).z_homed)
+          const xH = Boolean((data as any).x_homed)
+          setVerticalHomed(zH)
+          setVerticalHomedDimmed(!zH)
+          setHorizontalHomed(xH)
+          setHorizontalHomedDimmed(!xH)
+          const sH = Boolean((data as any).syringe_homed)
+          setSyringeHomed(sH)
+          setSyringeHomedDimmed(!sH)
           if (data.relay_states) {
             const arr = Array(8).fill(false)
             Object.entries(data.relay_states).forEach(([k, v]) => {
@@ -258,7 +258,22 @@ export default function ControlPanel() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="premium-card p-6 flex items-center justify-center">
-          <SyringeWidget volume={syringeLiveVolume ?? syringeVolume} maxVolume={2.5} isActive={isSyringeActive} />
+          <div className="w-full">
+            <div className="flex justify-end mb-3">
+              <span
+                className={`text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wide shadow-sm transition ${
+                  syringeHomed
+                    ? syringeHomedDimmed
+                      ? "bg-success/10 text-success/60 border border-success/30 opacity-70"
+                      : "bg-success/25 text-success border border-success/50 shadow-success/50"
+                    : "bg-muted text-muted-foreground border border-border"
+                }`}
+              >
+                {syringeHomed ? "Homed" : "Not Homed"}
+              </span>
+            </div>
+            <SyringeWidget volume={syringeLiveVolume ?? syringeVolume} maxVolume={2.5} isActive={isSyringeActive} />
+          </div>
         </div>
 
         <div className="premium-card p-6 space-y-4">

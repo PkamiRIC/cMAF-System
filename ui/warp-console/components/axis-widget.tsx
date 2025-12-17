@@ -80,8 +80,8 @@ export default function AxisWidget({
             className={`text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wide shadow-sm transition ${
               homed
                 ? homedDimmed
-                  ? "bg-success/10 text-success/70 border border-success/20"
-                  : "bg-success/15 text-success border border-success/30 shadow-success/30"
+                  ? "bg-success/10 text-success/70 border border-success/20 opacity-60"
+                  : "bg-success/20 text-success border border-success/40 shadow-success/40"
                 : "bg-muted text-muted-foreground border border-border"
             }`}
           >

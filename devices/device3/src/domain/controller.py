@@ -33,6 +33,9 @@ class DeviceState:
     syringe_target_ml: Optional[float] = None
     x_target_mm: Optional[float] = None
     z_target_mm: Optional[float] = None
+    x_homed: bool = False
+    z_homed: bool = False
+    syringe_homed: bool = False
 
 
 class DeviceController:
@@ -161,6 +164,7 @@ class DeviceController:
         self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")
         with self._state_lock:
             self.state.syringe_target_ml = volume_ml
+            self.state.syringe_homed = False
         self._broadcast_status()
 
         self.syringe.goto_absolute(volume_ml, flow_ml_min)
@@ -192,6 +196,8 @@ class DeviceController:
         self.syringe.home(stop_flag=self._stop_event.is_set)
         with self._state_lock:
             self.state.syringe_target_ml = 0.0
+            self.state.syringe_homed = True
+            self.state.syringe_volume_ml = 0.0
         self._broadcast_status()
 
     # ---------------------------------------------------
@@ -207,17 +213,20 @@ class DeviceController:
             driver = self.vertical_axis
             log_label = "Vertical"
             target_field = "z_target_mm"
+            homed_field = "z_homed"
         elif axis_norm == "X":
             self._assert_horizontal_allowed()
             target = self._clamp(position_mm, self.config.horizontal_axis.min_mm, self.config.horizontal_axis.max_mm)
             driver = self.horizontal_axis
             log_label = "Horizontal"
             target_field = "x_target_mm"
+            homed_field = "x_homed"
         else:
             raise ValueError("axis must be X or Z")
         self._log(f"[Axis {log_label}] move to {target:.2f} mm @ {rpm:.2f} rpm")
         with self._state_lock:
             setattr(self.state, target_field, target)
+            setattr(self.state, homed_field, False)  # dim homed indicator on any move
         driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
 
     def home_axis(self, axis: str) -> None:
@@ -464,6 +473,8 @@ class DeviceController:
             with self._state_lock:
                 self.state.state = "IDLE"
                 self.state.last_error = None
+                self.state.syringe_homed = True
+                self.state.syringe_volume_ml = 0.0
         except Exception as exc:
             with self._state_lock:
                 self.state.state = "ERROR"
@@ -483,6 +494,8 @@ class DeviceController:
             except Exception as exc:
                 raise RuntimeError(f"Vertical axis unavailable: {exc}")
         self.vertical_axis.home(stop_flag=self._stop_event.is_set)
+        with self._state_lock:
+            self.state.z_homed = True
 
     def _home_horizontal_axis(self) -> None:
         self._assert_horizontal_allowed()
@@ -492,6 +505,8 @@ class DeviceController:
             except Exception as exc:
                 raise RuntimeError(f"Horizontal axis unavailable: {exc}")
         self.horizontal_axis.home(stop_flag=self._stop_event.is_set)
+        with self._state_lock:
+            self.state.x_homed = True
 
     def _assert_horizontal_allowed(self) -> None:
         guard = self.config.horizontal_axis.vertical_guard_mm
