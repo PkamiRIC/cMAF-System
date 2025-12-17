@@ -436,6 +436,13 @@ class DeviceController:
                 self._log_buffer = self._log_buffer[-100:]
         self._broadcast_status()
 
+    def clear_logs(self) -> None:
+        with self._log_lock:
+            self._log_buffer = []
+        with self._state_lock:
+            self.state.logs = []
+        self._broadcast_status()
+
     def _not_wired(self, label: str) -> Callable[[], None]:
         def _fn():
             raise RuntimeError(f"Action '{label}' not wired to backend yet")

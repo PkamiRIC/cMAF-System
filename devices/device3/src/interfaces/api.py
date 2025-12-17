@@ -109,6 +109,11 @@ def create_app(config: DeviceConfig, config_path: str):
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
 
+    @app.post("/logs/clear")
+    def clear_logs():
+        controller.clear_logs()
+        return {"ok": True}
+
     @app.post("/axis/{axis}/move")
     def axis_move(axis: Literal["X", "Z", "x", "z"], payload: AxisMove):
         try:

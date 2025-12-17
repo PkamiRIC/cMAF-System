@@ -1,38 +1,117 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+
+type StatusPayload = {
+  logs?: string[]
+}
+
+// Use an explicit absolute base so requests always hit the PLC.
+const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://warp3plc.local:8003"
 
 export default function EventLog() {
-  const events = [
-    "Connected on /dev/ttyUSB0",
-    "Vertical Axis Ready",
-    "Horizontal Axis Ready",
-    "Syringe control ready",
-    "System initialized",
-  ]
-  const [timestamp, setTimestamp] = useState<string>("")
+  const [events, setEvents] = useState<string[]>([])
+  const [connected, setConnected] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
+  const listRef = useRef<HTMLDivElement | null>(null)
+
+  // Auto-scroll to the newest entry when logs change.
+  useEffect(() => {
+    const node = listRef.current
+    if (node) {
+      node.scrollTop = node.scrollHeight
+    }
+  }, [events.length])
 
   useEffect(() => {
-    setTimestamp(new Date().toLocaleTimeString())
+    let es: EventSource | null = null
+    let retry: ReturnType<typeof setTimeout> | null = null
+
+    const connect = () => {
+      es = new EventSource(`${apiBase}/events/sse`)
+      es.onopen = () => {
+        setConnected(true)
+        setError(null)
+      }
+      es.onmessage = (ev) => {
+        try {
+          const payload: StatusPayload = JSON.parse(ev.data || "{}")
+          if (Array.isArray(payload.logs)) {
+            setEvents(payload.logs)
+          }
+        } catch {
+          // ignore malformed frames
+        }
+      }
+      es.onerror = () => {
+        setConnected(false)
+        es?.close()
+        if (retry) clearTimeout(retry)
+        retry = setTimeout(connect, 2000)
+      }
+    }
+
+    connect()
+
+    return () => {
+      setConnected(false)
+      if (retry) clearTimeout(retry)
+      es?.close()
+    }
   }, [])
+
+  const handleClear = async () => {
+    setClearing(true)
+    try {
+      const res = await fetch(`${apiBase}/logs/clear`, { method: "POST" })
+      if (!res.ok) throw new Error(`Clear failed (${res.status})`)
+      setEvents([])
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Unable to clear log")
+    } finally {
+      setClearing(false)
+    }
+  }
+
+  const emptyState = useMemo(() => !events || events.length === 0, [events])
 
   return (
     <div className="premium-card p-6 space-y-4">
-      <h2 className="text-lg font-semibold text-foreground">Event Log</h2>
-
-      <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent">
-        {events.map((event, idx) => (
-          <div
-            key={idx}
-            className="text-sm text-muted-foreground font-mono border-l-2 border-primary/50 pl-4 py-2 bg-secondary/30 rounded-r-lg hover:bg-secondary/50 transition-colors"
-          >
-            <span className="text-primary font-semibold">[{timestamp || "--:--:--"}]</span> {event}
-          </div>
-        ))}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-foreground">Event Log</h2>
+        <span className={`text-xs ${connected ? "text-success" : "text-destructive"}`}>
+          {connected ? "live" : "reconnecting..."}
+        </span>
       </div>
 
-      <button className="w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md">
-        Clear Log
+      <div
+        ref={listRef}
+        className="space-y-2 h-72 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent"
+      >
+        {emptyState ? (
+          <div className="text-sm text-muted-foreground italic">No events yet.</div>
+        ) : (
+          events.map((event, idx) => (
+            <div
+              key={`${event}-${idx}`}
+              className="text-sm text-muted-foreground font-mono border-l-2 border-primary/50 pl-4 py-2 bg-secondary/30 rounded-r-lg hover:bg-secondary/50 transition-colors"
+            >
+              {event}
+            </div>
+          ))
+        )}
+      </div>
+
+      {error && <div className="text-xs text-destructive">{error}</div>}
+
+      <button
+        onClick={handleClear}
+        disabled={clearing}
+        className="w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-xl font-medium hover:bg-muted transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {clearing ? "Clearing..." : "Clear Log"}
       </button>
     </div>
   )
