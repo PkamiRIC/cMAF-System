@@ -135,10 +135,12 @@ class DeviceController:
 
     def set_relay(self, channel: int, enabled: bool) -> bool:
         self._ensure_manual_allowed()
+        self._log(f"[Relay] R{channel} {'ON' if enabled else 'OFF'}")
         return self._set_relay(channel, enabled, allow_when_running=False)
 
     def set_rotary_port(self, port: int) -> bool:
         self._ensure_manual_allowed()
+        self._log(f"[Rotary] Set port {port}")
         return self._set_rotary_port(port, allow_when_running=False)
 
     def set_all_relays(self, enabled: bool) -> bool:
@@ -147,6 +149,7 @@ class DeviceController:
         """
         self._ensure_manual_allowed()
         ok = self.relays.all_on() if enabled else self.relays.all_off()
+        self._log(f"[Relay] ALL {'ON' if enabled else 'OFF'}")
         if ok:
             for ch in range(1, 9):
                 self.relay_states[ch] = enabled
@@ -224,6 +227,7 @@ class DeviceController:
         driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
 
     def home_axis(self, axis: str) -> None:
+        self._log(f"[Axis {axis_norm}] homing (manual)")
         if self.state.state == "RUNNING" and self.state.current_sequence not in {None, "homing"}:
             raise RuntimeError("Manual moves locked while a sequence is running")
         axis_norm = axis.upper()
@@ -438,6 +442,7 @@ class DeviceController:
             else:
                 for ch in range(1, 9):
                     self.relays.off(ch)
+            self._log("[Relays] All OFF before homing")
             time.sleep(0.5)  # Allow relays to settle
         except Exception:
             # Keep going even if one relay write fails
@@ -463,7 +468,7 @@ class DeviceController:
             self._before_step("Homing syringe pump")
             self._check_stop()
             self.syringe.home(stop_flag=self._stop_event.is_set)
-
+            self._append_log("Syringe homed")
             with self._state_lock:
                 self.state.state = "IDLE"
                 self.state.last_error = None
@@ -486,6 +491,9 @@ class DeviceController:
             except Exception as exc:
                 raise RuntimeError(f"Vertical axis unavailable: {exc}")
         self.vertical_axis.home(stop_flag=self._stop_event.is_set)
+        with self._state_lock:
+            self.state.z_homed = True
+        self._append_log("Vertical axis homed")
 
     def _home_horizontal_axis(self) -> None:
         self._assert_horizontal_allowed()
@@ -495,6 +503,9 @@ class DeviceController:
             except Exception as exc:
                 raise RuntimeError(f"Horizontal axis unavailable: {exc}")
         self.horizontal_axis.home(stop_flag=self._stop_event.is_set)
+        with self._state_lock:
+            self.state.x_homed = True
+        self._append_log("Horizontal axis homed")
 
     def _assert_horizontal_allowed(self) -> None:
         guard = self.config.horizontal_axis.vertical_guard_mm
@@ -529,6 +540,7 @@ class DeviceController:
         if self.state.state == "RUNNING" and not allow_when_running:
             raise RuntimeError("Rotary valve locked while a sequence is running")
         ok = self.rotary.set_port(port)
+        self._log(f"[Rotary] Set port {port}")
         if ok:
             self.rotary_port = port
             with self._state_lock:
@@ -594,7 +606,6 @@ class DeviceController:
                 self._loop.call_soon_threadsafe(q.put_nowait, payload)
             except Exception:
                 continue
-
 
 class _RelayAdapter:
     """Adapter used by sequences to update relay cache while allowing runs."""
