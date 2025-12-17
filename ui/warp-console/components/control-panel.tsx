@@ -139,6 +139,14 @@ export default function ControlPanel() {
           if (typeof data.syringe_volume_ml === "number") {
             setSyringeLiveVolume(Number(data.syringe_volume_ml.toFixed(2)))
           }
+          if (data.relay_states) {
+            const arr = Array(8).fill(false)
+            Object.entries(data.relay_states).forEach(([k, v]) => {
+              const idx = Number(k) - 1
+              if (idx >= 0 && idx < arr.length) arr[idx] = Boolean(v)
+            })
+            setRelayStates(arr)
+          }
         }
       } catch (err) {
         // Swallow polling errors; UI handles command errors separately.

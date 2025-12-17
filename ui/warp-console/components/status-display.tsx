@@ -12,6 +12,7 @@ export type DeviceStatus = {
   last_error?: string | null
   syringe_busy?: boolean
   syringe_volume_ml?: number | null
+  relay_states?: Record<string, boolean> // or Record<number, boolean>
 }
 
 // Use an explicit absolute base so requests always hit the PLC.
