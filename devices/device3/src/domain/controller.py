@@ -55,6 +55,8 @@ class DeviceController:
         self._log_buffer: list[str] = []
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._sse_subscribers: list[asyncio.Queue] = []
+        # Prevent simultaneous X/Z motion; serialize all axis moves/homing.
+        self._axis_move_lock = threading.Lock()
 
         # Hard caps (Position 3) for manual + sequence moves
         self._axis_max_limits = {
@@ -250,7 +252,8 @@ class DeviceController:
             else:
                 self.state.x_homed = False
         try:
-            driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
+            with self._axis_move_lock:
+                driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
         except Exception:
             # Drop the driver so the next attempt will reconnect cleanly.
             driver.mark_unready()
@@ -536,7 +539,8 @@ class DeviceController:
                 self.vertical_axis.connect()
             except Exception as exc:
                 raise RuntimeError(f"Vertical axis unavailable: {exc}")
-        self.vertical_axis.home(stop_flag=self._stop_event.is_set)
+        with self._axis_move_lock:
+            self.vertical_axis.home(stop_flag=self._stop_event.is_set)
         with self._state_lock:
             self.state.z_homed = True
         self._append_log("Vertical axis homed")
@@ -548,7 +552,8 @@ class DeviceController:
                 self.horizontal_axis.connect()
             except Exception as exc:
                 raise RuntimeError(f"Horizontal axis unavailable: {exc}")
-        self.horizontal_axis.home(stop_flag=self._stop_event.is_set)
+        with self._axis_move_lock:
+            self.horizontal_axis.home(stop_flag=self._stop_event.is_set)
         with self._state_lock:
             self.state.x_homed = True
         self._append_log("Horizontal axis homed")
@@ -624,7 +629,8 @@ class DeviceController:
             clamped = self._clamp(target, self.config.horizontal_axis.min_mm, self._axis_max_limits["X"])
             with self._state_lock:
                 self.state.x_homed = False
-            self.horizontal_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
+            with self._axis_move_lock:
+                self.horizontal_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
 
         return _fn
 
@@ -643,7 +649,8 @@ class DeviceController:
             clamped = self._clamp(target, self.config.vertical_axis.min_mm, self._axis_max_limits["Z"])
             with self._state_lock:
                 self.state.z_homed = False
-            self.vertical_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
+            with self._axis_move_lock:
+                self.vertical_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
 
         return _fn
 
