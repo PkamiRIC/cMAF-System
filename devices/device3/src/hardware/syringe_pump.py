@@ -121,20 +121,30 @@ class SyringePump:
         command = self._build_command(volume_ml, flow_rate_ml_min)
         self._send_command(command)
 
-    def stop_motion(self) -> bool:
+    def stop_motion(self, volume_hint_ml: Optional[float] = None) -> bool:
         """
-        Best-effort soft stop: read current position and command a move to that point
-        with minimal flow so motion ceases.
+        Best-effort soft stop:
+        - Try reading current position and re-command that same point with zero flow.
+        - If a recent volume hint is provided, fall back to it when live read fails.
         """
-        status = self.read_status(max_tries=1)
-        if not status:
+        status = self.read_status(max_tries=3)
+        current_ml: Optional[float] = None
+
+        if status:
+            try:
+                current_ml = float(status.get("volume_ml", None))
+            except Exception:
+                current_ml = None
+
+        if current_ml is None:
+            current_ml = volume_hint_ml
+
+        if current_ml is None:
             return False
+
         try:
-            current_ml = float(status.get("volume_ml", 0.0))
-        except Exception:
-            current_ml = 0.0
-        try:
-            self.goto_absolute(current_ml, 0.1)
+            # Zero flow re-issues the position with no additional travel.
+            self.goto_absolute(current_ml, 0.0)
             return True
         except Exception:
             return False

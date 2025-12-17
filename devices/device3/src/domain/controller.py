@@ -186,7 +186,9 @@ class DeviceController:
             self._ensure_manual_allowed()
         self._log("[Syringe] stop request")
         self._stop_event.set()
-        ok = self.syringe.stop_motion()
+        with self._state_lock:
+            vol_hint = self.state.syringe_volume_ml
+        ok = self.syringe.stop_motion(volume_hint_ml=vol_hint)
         if not ok:
             raise RuntimeError("Syringe stop failed")
         self._stop_event.clear()
