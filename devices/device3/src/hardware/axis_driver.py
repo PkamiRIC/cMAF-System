@@ -65,3 +65,8 @@ class AxisDriver:
         if pump is None:
             raise RuntimeError(f"{self.name} axis unavailable (not connected)")
         return pump
+
+    def mark_unready(self) -> None:
+        """Drop the cached driver so the next call forces a reconnect."""
+        with self._lock:
+            self._pump = None

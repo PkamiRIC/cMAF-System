@@ -169,6 +169,8 @@ class DeviceController:
         We only record the target for UI display.
         """
         self._ensure_manual_allowed()
+        # Clear stale stop flags from prior operations before manual moves.
+        self._stop_event.clear()
         self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")
         with self._state_lock:
             self.state.syringe_target_ml = volume_ml
@@ -217,6 +219,8 @@ class DeviceController:
         # Allow manual moves when not running a user sequence (idle or homing)
         if self.state.state == "RUNNING" and self.state.current_sequence not in {None, "homing"}:
             raise RuntimeError("Manual moves locked while a sequence is running")
+        # Clear stale stop flags from prior errors before a manual move.
+        self._stop_event.clear()
         axis_norm = axis.upper()
         if axis_norm == "Z":
             self._ensure_axis_ready(self.vertical_axis, "Vertical")
@@ -245,7 +249,12 @@ class DeviceController:
                 self.state.z_homed = False
             else:
                 self.state.x_homed = False
-        driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
+        try:
+            driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
+        except Exception:
+            # Drop the driver so the next attempt will reconnect cleanly.
+            driver.mark_unready()
+            raise
 
     def home_axis(self, axis: str) -> None:
         self._log(f"[Axis {axis_norm}] homing (manual)")
