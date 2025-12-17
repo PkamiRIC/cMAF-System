@@ -559,9 +559,10 @@ class DeviceController:
         self._append_log("Horizontal axis homed")
 
     def _assert_horizontal_allowed(self) -> None:
+        # Block horizontal motion if vertical is above safety threshold.
         guard = self.config.horizontal_axis.vertical_guard_mm
         if guard is None:
-            return
+            guard = 10.0  # legacy default from WARP3_v6
         vpos = self._read_vertical_position_mm()
         if vpos is None:
             raise RuntimeError("Horizontal axis locked: vertical axis position unavailable")
