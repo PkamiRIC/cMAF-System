@@ -42,7 +42,7 @@ export default function ControlPanel() {
   const [horizontalPosition, setHorizontalPosition] = useState(100.0)
   const [horizontalSpeed, setHorizontalSpeed] = useState(5.0)
   const horizontalMin = 0
-  const horizontalMax = 300
+  const horizontalMax = 133
 
   const [syringeVolume, setSyringeVolume] = useState(2.5)
   const [flowRate, setFlowRate] = useState(1.0)

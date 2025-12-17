@@ -56,6 +56,12 @@ class DeviceController:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._sse_subscribers: list[asyncio.Queue] = []
 
+        # Hard caps (Position 3) for manual + sequence moves
+        self._axis_max_limits = {
+            "Z": self._resolve_axis_limit(config.vertical_axis.max_mm, 33.0),
+            "X": self._resolve_axis_limit(config.horizontal_axis.max_mm, 133.0),
+        }
+
         # Relay/rotary caches for UI feedback
         self.relay_states = {ch: False for ch in range(1, 9)}
         self.rotary_port: Optional[int] = None
@@ -213,13 +219,17 @@ class DeviceController:
             raise RuntimeError("Manual moves locked while a sequence is running")
         axis_norm = axis.upper()
         if axis_norm == "Z":
-            target = self._clamp(position_mm, self.config.vertical_axis.min_mm, self.config.vertical_axis.max_mm)
+            target = self._clamp(
+                position_mm, self.config.vertical_axis.min_mm, self._axis_max_limits["Z"]
+            )
             driver = self.vertical_axis
             log_label = "Vertical"
             target_field = "z_target_mm"
         elif axis_norm == "X":
             self._assert_horizontal_allowed()
-            target = self._clamp(position_mm, self.config.horizontal_axis.min_mm, self.config.horizontal_axis.max_mm)
+            target = self._clamp(
+                position_mm, self.config.horizontal_axis.min_mm, self._axis_max_limits["X"]
+            )
             driver = self.horizontal_axis
             log_label = "Horizontal"
             target_field = "x_target_mm"
@@ -254,6 +264,12 @@ class DeviceController:
         if max_v is not None:
             value = min(max_v, value)
         return value
+
+    @staticmethod
+    def _resolve_axis_limit(cfg_max: Optional[float], hard_cap: float) -> float:
+        if cfg_max is None:
+            return hard_cap
+        return min(cfg_max, hard_cap)
 
     def home_all(self) -> None:
         """
@@ -590,9 +606,10 @@ class DeviceController:
 
         def _fn():
             self._assert_horizontal_allowed()
+            clamped = self._clamp(target, self.config.horizontal_axis.min_mm, self._axis_max_limits["X"])
             with self._state_lock:
                 self.state.x_homed = False
-            self.horizontal_axis.move_mm(target, rpm=5.0, stop_flag=self._stop_event.is_set)
+            self.horizontal_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
 
         return _fn
 
@@ -607,9 +624,10 @@ class DeviceController:
             return self._noop(f"vertical preset {key}")
 
         def _fn():
+            clamped = self._clamp(target, self.config.vertical_axis.min_mm, self._axis_max_limits["Z"])
             with self._state_lock:
                 self.state.z_homed = False
-            self.vertical_axis.move_mm(target, rpm=5.0, stop_flag=self._stop_event.is_set)
+            self.vertical_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
 
         return _fn
 
