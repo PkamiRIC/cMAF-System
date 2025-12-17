@@ -198,6 +198,7 @@ class DeviceController:
         self.syringe.home(stop_flag=self._stop_event.is_set)
         with self._state_lock:
             self.state.syringe_target_ml = 0.0
+            self.state.syringe_homed = True
         self._broadcast_status()
 
     # ---------------------------------------------------
@@ -470,6 +471,7 @@ class DeviceController:
             self.syringe.home(stop_flag=self._stop_event.is_set)
             self._append_log("Syringe homed")
             with self._state_lock:
+                self.state.syringe_homed = True
                 self.state.state = "IDLE"
                 self.state.last_error = None
         except Exception as exc:
