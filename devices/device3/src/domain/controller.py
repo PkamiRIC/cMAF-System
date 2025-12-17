@@ -257,10 +257,12 @@ class DeviceController:
             raise
 
     def home_axis(self, axis: str) -> None:
+        # Clear stale stop flags from earlier errors before homing.
+        self._stop_event.clear()
+        axis_norm = axis.upper()
         self._log(f"[Axis {axis_norm}] homing (manual)")
         if self.state.state == "RUNNING" and self.state.current_sequence not in {None, "homing"}:
             raise RuntimeError("Manual moves locked while a sequence is running")
-        axis_norm = axis.upper()
         if axis_norm == "Z":
             self._home_vertical_axis()
         elif axis_norm == "X":
