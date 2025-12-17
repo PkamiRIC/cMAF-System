@@ -118,7 +118,9 @@ class SyringePump:
     # Public API -------------------------------------------------
     def goto_absolute(self, volume_ml: float, flow_rate_ml_min: float) -> None:
         """Move plunger to absolute volume target."""
-        volume_ml = max(0.0, min(volume_ml, 2.5))  # hard cap syringe to 2.5 mL
+        # Only cap volume for the actual syringe pump, not axis drivers.
+        if isinstance(self.config, SyringeConfig):
+            volume_ml = max(0.0, min(volume_ml, 2.5))
         command = self._build_command(volume_ml, flow_rate_ml_min)
         self._send_command(command)
 
