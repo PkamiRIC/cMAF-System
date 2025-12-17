@@ -9,6 +9,17 @@ type StatusPayload = {
 // Use an explicit absolute base so requests always hit the PLC.
 const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://warp3plc.local:8003"
 
+async function fetchStatusLogs(): Promise<string[] | null> {
+  try {
+    const res = await fetch(`${apiBase}/status`, { cache: "no-store" })
+    if (!res.ok) return null
+    const data = (await res.json()) as StatusPayload
+    return Array.isArray(data.logs) ? data.logs : null
+  } catch {
+    return null
+  }
+}
+
 export default function EventLog() {
   const [events, setEvents] = useState<string[]>([])
   const [connected, setConnected] = useState(false)
@@ -58,6 +69,23 @@ export default function EventLog() {
       setConnected(false)
       if (retry) clearTimeout(retry)
       es?.close()
+    }
+  }, [])
+
+  // Poll status as a fallback to keep logs populated even if SSE misses a frame.
+  useEffect(() => {
+    let cancelled = false
+    const tick = async () => {
+      const logs = await fetchStatusLogs()
+      if (!cancelled && Array.isArray(logs)) {
+        setEvents(logs)
+      }
+    }
+    tick()
+    const id = setInterval(tick, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
     }
   }, [])
 
