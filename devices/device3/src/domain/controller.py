@@ -167,6 +167,8 @@ class DeviceController:
         self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")
         with self._state_lock:
             self.state.syringe_target_ml = volume_ml
+            # Any non-homing motion invalidates the homed flag
+            self.state.syringe_homed = False
         self._broadcast_status()
 
         self.syringe.goto_absolute(volume_ml, flow_ml_min)
@@ -225,6 +227,11 @@ class DeviceController:
         self._log(f"[Axis {log_label}] move to {target:.2f} mm @ {rpm:.2f} rpm")
         with self._state_lock:
             setattr(self.state, target_field, target)
+            # Any non-homing motion invalidates the homed flag
+            if axis_norm == "Z":
+                self.state.z_homed = False
+            else:
+                self.state.x_homed = False
         driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
 
     def home_axis(self, axis: str) -> None:
@@ -575,6 +582,8 @@ class DeviceController:
 
         def _fn():
             self._assert_horizontal_allowed()
+            with self._state_lock:
+                self.state.x_homed = False
             self.horizontal_axis.move_mm(target, rpm=5.0, stop_flag=self._stop_event.is_set)
 
         return _fn
@@ -590,6 +599,8 @@ class DeviceController:
             return self._noop(f"vertical preset {key}")
 
         def _fn():
+            with self._state_lock:
+                self.state.z_homed = False
             self.vertical_axis.move_mm(target, rpm=5.0, stop_flag=self._stop_event.is_set)
 
         return _fn
