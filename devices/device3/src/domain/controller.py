@@ -219,6 +219,7 @@ class DeviceController:
             raise RuntimeError("Manual moves locked while a sequence is running")
         axis_norm = axis.upper()
         if axis_norm == "Z":
+            self._ensure_axis_ready(self.vertical_axis, "Vertical")
             target = self._clamp(
                 position_mm, self.config.vertical_axis.min_mm, self._axis_max_limits["Z"]
             )
@@ -227,6 +228,7 @@ class DeviceController:
             target_field = "z_target_mm"
         elif axis_norm == "X":
             self._assert_horizontal_allowed()
+            self._ensure_axis_ready(self.horizontal_axis, "Horizontal")
             target = self._clamp(
                 position_mm, self.config.horizontal_axis.min_mm, self._axis_max_limits["X"]
             )
@@ -554,6 +556,7 @@ class DeviceController:
 
     def _read_vertical_position_mm(self) -> Optional[float]:
         try:
+            self._ensure_axis_ready(self.vertical_axis, "Vertical")
             return self.vertical_axis.read_position_mm()
         except Exception:
             return None
@@ -606,6 +609,7 @@ class DeviceController:
 
         def _fn():
             self._assert_horizontal_allowed()
+            self._ensure_axis_ready(self.horizontal_axis, "Horizontal")
             clamped = self._clamp(target, self.config.horizontal_axis.min_mm, self._axis_max_limits["X"])
             with self._state_lock:
                 self.state.x_homed = False
@@ -624,12 +628,21 @@ class DeviceController:
             return self._noop(f"vertical preset {key}")
 
         def _fn():
+            self._ensure_axis_ready(self.vertical_axis, "Vertical")
             clamped = self._clamp(target, self.config.vertical_axis.min_mm, self._axis_max_limits["Z"])
             with self._state_lock:
                 self.state.z_homed = False
             self.vertical_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
 
         return _fn
+
+    def _ensure_axis_ready(self, driver: AxisDriver, label: str) -> None:
+        if driver.ready:
+            return
+        try:
+            driver.connect()
+        except Exception as exc:
+            raise RuntimeError(f"{label} axis unavailable: {exc}")
 
     def _home_all_axes(self) -> None:
         self._home_vertical_axis()
