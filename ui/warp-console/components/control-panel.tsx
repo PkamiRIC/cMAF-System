@@ -27,9 +27,8 @@ export default function ControlPanel() {
   const [verticalPos, setVerticalPos] = useState(25.0)
   const [verticalTarget, setVerticalTarget] = useState(50.0)
   const [verticalVelocity, setVerticalVelocity] = useState(40.0)
-  const [verticalHomed, setVerticalHomed] = useState(true)
-  const [verticalEnabled, setVerticalEnabled] = useState(true)
-  const [verticalFault, setVerticalFault] = useState(false)
+  const [verticalHomed, setVerticalHomed] = useState(false)
+  const [verticalHomedDimmed, setVerticalHomedDimmed] = useState(true)
   const [verticalPosition, setVerticalPosition] = useState(50.0)
   const [verticalSpeed, setVerticalSpeed] = useState(5.0)
   const verticalMin = 0
@@ -38,9 +37,8 @@ export default function ControlPanel() {
   const [horizontalPos, setHorizontalPos] = useState(60.0)
   const [horizontalTarget, setHorizontalTarget] = useState(100.0)
   const [horizontalVelocity, setHorizontalVelocity] = useState(60.0)
-  const [horizontalHomed, setHorizontalHomed] = useState(true)
-  const [horizontalEnabled, setHorizontalEnabled] = useState(true)
-  const [horizontalFault, setHorizontalFault] = useState(false)
+  const [horizontalHomed, setHorizontalHomed] = useState(false)
+  const [horizontalHomedDimmed, setHorizontalHomedDimmed] = useState(true)
   const [horizontalPosition, setHorizontalPosition] = useState(100.0)
   const [horizontalSpeed, setHorizontalSpeed] = useState(5.0)
   const horizontalMin = 0
@@ -113,6 +111,11 @@ export default function ControlPanel() {
   const moveAxis = async (axis: "X" | "Z", position: number, rpm: number) => {
     try {
       await post(`/axis/${axis}/move`, { position_mm: position, rpm })
+      if (axis === "Z") {
+        setVerticalHomedDimmed(true)
+      } else {
+        setHorizontalHomedDimmed(true)
+      }
       setError(null)
     } catch (err: any) {
       setError(err?.message || `${axis} move failed`)
@@ -122,13 +125,20 @@ export default function ControlPanel() {
   const homeAxis = async (axis: "X" | "Z") => {
     try {
       await post(`/axis/${axis}/home`)
+      if (axis === "Z") {
+        setVerticalHomed(true)
+        setVerticalHomedDimmed(false)
+      } else {
+        setHorizontalHomed(true)
+        setHorizontalHomedDimmed(false)
+      }
       setError(null)
     } catch (err: any) {
       setError(err?.message || `${axis} home failed`)
     }
   }
 
-  // Poll status so syringe activity reflects the real driver status.
+  // Poll status so syringe activity and relays reflect the real driver status.
   useEffect(() => {
     let cancelled = false
     const tick = async () => {
@@ -148,7 +158,7 @@ export default function ControlPanel() {
             setRelayStates(arr)
           }
         }
-      } catch (err) {
+      } catch {
         // Swallow polling errors; UI handles command errors separately.
       }
     }
@@ -165,7 +175,7 @@ export default function ControlPanel() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AxisWidget
           axisId="Z"
-          name="Vertical Axis – Device 3"
+          name="Vertical Axis Device 3"
           orientation="vertical"
           positionMm={verticalPos}
           minMm={verticalMin}
@@ -173,8 +183,7 @@ export default function ControlPanel() {
           targetMm={verticalTarget}
           velocityMmPerS={verticalVelocity}
           homed={verticalHomed}
-          enabled={verticalEnabled}
-          fault={verticalFault}
+          homedDimmed={verticalHomedDimmed}
           onPosition1={() => {
             const target = clamp(0, verticalMin, verticalMax)
             setVerticalPos(target)
@@ -207,7 +216,7 @@ export default function ControlPanel() {
 
         <AxisWidget
           axisId="X"
-          name="Horizontal Axis – Device 3"
+          name="Horizontal Axis Device 3"
           orientation="horizontal"
           positionMm={horizontalPos}
           minMm={horizontalMin}
@@ -215,8 +224,7 @@ export default function ControlPanel() {
           targetMm={horizontalTarget}
           velocityMmPerS={horizontalVelocity}
           homed={horizontalHomed}
-          enabled={horizontalEnabled}
-          fault={horizontalFault}
+          homedDimmed={horizontalHomedDimmed}
           onPosition1={() => {
             const target = clamp(0, horizontalMin, horizontalMax)
             setHorizontalPos(target)

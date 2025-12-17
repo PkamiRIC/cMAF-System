@@ -14,8 +14,7 @@ interface AxisWidgetProps {
   targetMm?: number
   velocityMmPerS?: number
   homed: boolean
-  enabled: boolean
-  fault: boolean
+  homedDimmed?: boolean
   onPosition1?: () => void
   onPosition2?: () => void
   onPosition3?: () => void
@@ -37,8 +36,7 @@ export default function AxisWidget({
   targetMm,
   velocityMmPerS,
   homed,
-  enabled,
-  fault,
+  homedDimmed = false,
   onPosition1,
   onPosition2,
   onPosition3,
@@ -79,31 +77,15 @@ export default function AxisWidget({
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
           <span
-            className={`text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wide shadow-sm ${
+            className={`text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wide shadow-sm transition ${
               homed
-                ? "bg-success/15 text-success border border-success/30"
+                ? homedDimmed
+                  ? "bg-success/10 text-success/70 border border-success/20"
+                  : "bg-success/15 text-success border border-success/30 shadow-success/30"
                 : "bg-muted text-muted-foreground border border-border"
             }`}
           >
             {homed ? "Homed" : "Not Homed"}
-          </span>
-          <span
-            className={`text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wide shadow-sm ${
-              enabled
-                ? "bg-success/15 text-success border border-success/30"
-                : "bg-muted text-muted-foreground border border-border"
-            }`}
-          >
-            {enabled ? "Enabled" : "Disabled"}
-          </span>
-          <span
-            className={`text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wide shadow-sm ${
-              fault
-                ? "bg-destructive/15 text-destructive border border-destructive/30"
-                : "bg-muted text-muted-foreground border border-border"
-            }`}
-          >
-            {fault ? "Fault" : "OK"}
           </span>
         </div>
       </div>
