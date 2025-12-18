@@ -9,9 +9,9 @@ npm run dev
 ```
 
 ## API integration
-- Backend: Device 3 FastAPI (default http://localhost:8003)
-- Status stream: subscribe to `GET /events/sse` for realtime relay/rotary/step/log updates.
-- Manual endpoints: `/relays/{channel}/{on|off}`, `/rotary/{port}`, `/syringe/move`
-- Sequence controls: `/command/start/{sequence_name}`, `/command/stop`, `/command/home`, `/command/emergency_stop`, `/status`
+- Backend URL is configured via `dashboard/.env`:
+  - `VITE_DEVICE3_URL=http://warp3plc.local:8003` (or `http://localhost:8003`)
+- The dashboard currently polls `GET /status` every ~2s.
+- Device 3 also supports realtime updates via `GET /events/sse` (used by `ui/warp-console`).
 
-Ensure your `.env` or config points the dashboard to the correct API host/port.
+If you change `dashboard/.env`, restart `npm run dev`.

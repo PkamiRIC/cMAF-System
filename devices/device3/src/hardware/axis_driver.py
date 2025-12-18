@@ -71,6 +71,19 @@ class AxisDriver:
         with self._lock:
             self._pump = None
 
+    def stop_motion(self) -> bool:
+        """
+        Best-effort stop for an axis:
+        command the current position with zero flow so motion ceases.
+        """
+        pump = self._pump
+        if pump is None:
+            return False
+        try:
+            return bool(pump.stop_motion())
+        except Exception:
+            return False
+
     def _wait_until_idle(self, timeout: float, stop_flag: Optional[callable] = None) -> None:
         """
         Wait until the drive is truly idle.

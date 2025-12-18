@@ -1,51 +1,12 @@
-# Device 1 PLC Quick Guide (WARP1PLC)
+# Device 1 (WARP1PLC)
 
-SSH into the PLC:
-```
-ssh pi@warp1plc.local
-# or
-ssh pi@<DEVICE1_IP>
-```
+This folder is currently a placeholder. There is no Device 1 backend code checked into this repo yet (only documentation).
 
-## Project Paths (on PLC)
-```
-/home/pi/projects/WARP-Devices/devices/device1
-  src/
-  config/
-  .venv/
-  requirements.txt
-```
+If you are looking for a working backend + UI, use:
+- Device 3 backend: `devices/device3`
+- Recommended UI: `ui/warp-console`
 
-## Run Backend (manual)
-```
-cd ~/projects/WARP-Devices/devices/device1/src
-source ../.venv/bin/activate
-python -m main --config ../config/device1.yaml
-```
-Test: http://warp1plc.local:8001/status
-
-## systemd (production)
-Service: device1.service
-```
-sudo systemctl start|stop|restart device1.service
-sudo systemctl enable device1.service
-sudo systemctl status device1.service
-journalctl -u device1.service -n 50 --no-pager
-```
-
-## Update code / deps
-```
-cd ~/projects/WARP-Devices && git pull
-cd devices/device1 && source .venv/bin/activate
-pip install -r requirements.txt
-sudo systemctl restart device1.service
-```
-
-## Config
-Edit: ~/projects/WARP-Devices/devices/device1/config/device1.yaml
-
-## Health check
-```
-curl http://localhost:8001/status
-curl http://warp1plc.local:8001/status
-```
+When the Device 1 backend is added, this README should be updated with:
+- Run instructions (manual + systemd)
+- Config path/format
+- API endpoints and ports (expected: 8001)
