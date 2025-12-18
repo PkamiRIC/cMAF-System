@@ -55,8 +55,8 @@ class DeviceController:
         self._log_buffer: list[str] = []
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._sse_subscribers: list[asyncio.Queue] = []
-        # Prevent simultaneous X/Z motion; serialize all axis moves/homing.
-        self._axis_move_lock = threading.Lock()
+        # Serialize all physical motion (axes, syringe, rotary) across threads.
+        self._motion_lock = threading.Lock()
 
         # Hard caps (Position 3) for manual + sequence moves
         self._axis_max_limits = {
@@ -180,9 +180,9 @@ class DeviceController:
             self.state.syringe_homed = False
         self._broadcast_status()
 
-        self.syringe.goto_absolute(volume_ml, flow_ml_min)
-
-        idle = self.syringe.wait_until_idle(timeout=120, stop_flag=self._stop_event.is_set)
+        with self._motion_lock:
+            self.syringe.goto_absolute(volume_ml, flow_ml_min)
+            idle = self.syringe.wait_until_idle(timeout=120, stop_flag=self._stop_event.is_set)
         if not idle:
             raise RuntimeError("Syringe move timed out")
 
@@ -197,7 +197,8 @@ class DeviceController:
         self._stop_event.set()
         with self._state_lock:
             vol_hint = self.state.syringe_volume_ml
-        ok = self.syringe.stop_motion(volume_hint_ml=vol_hint)
+        with self._motion_lock:
+            ok = self.syringe.stop_motion(volume_hint_ml=vol_hint)
         if not ok:
             raise RuntimeError("Syringe stop failed")
         self._stop_event.clear()
@@ -208,7 +209,8 @@ class DeviceController:
         self._ensure_manual_allowed()
         self._log("[Syringe] homing")
         # Do not force syringe_busy; poller will reflect true motion.
-        self.syringe.home(stop_flag=self._stop_event.is_set)
+        with self._motion_lock:
+            self.syringe.home(stop_flag=self._stop_event.is_set)
         with self._state_lock:
             self.state.syringe_target_ml = 0.0
             self.state.syringe_homed = True
@@ -233,7 +235,6 @@ class DeviceController:
             log_label = "Vertical"
             target_field = "z_target_mm"
         elif axis_norm == "X":
-            self._assert_horizontal_allowed()
             self._ensure_axis_ready(self.horizontal_axis, "Horizontal")
             target = self._clamp(
                 position_mm, self.config.horizontal_axis.min_mm, self._axis_max_limits["X"]
@@ -252,7 +253,10 @@ class DeviceController:
             else:
                 self.state.x_homed = False
         try:
-            with self._axis_move_lock:
+            with self._motion_lock:
+                # Re-check safety interlocks at execution time (after any prior motion completes).
+                if axis_norm == "X":
+                    self._assert_horizontal_allowed()
                 driver.move_mm(target, rpm=rpm, stop_flag=self._stop_event.is_set)
         except Exception:
             # Drop the driver so the next attempt will reconnect cleanly.
@@ -400,13 +404,14 @@ class DeviceController:
     def _run_sequence(self, sequence_name: str) -> None:
         try:
             relay_adapter = _RelayAdapter(self, self._stop_event)
+            syringe_adapter = _SyringeAdapter(self, self._stop_event)
             if sequence_name.lower() in {"sequence1", "maf_sampling", "maf"}:
                 self._execute_sequence(
                     lambda: run_maf_sampling_sequence(
                         stop_flag=self._stop_event.is_set,
                         log=self._log,
                         relays=relay_adapter,
-                        syringe=self.syringe,
+                        syringe=syringe_adapter,
                         move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
                         move_vertical_close_plate=self._move_vertical_preset("close"),
                         select_rotary_port=lambda p: self._set_rotary_port(p, allow_when_running=True),
@@ -420,7 +425,7 @@ class DeviceController:
                         stop_flag=self._stop_event.is_set,
                         log=self._log,
                         relays=relay_adapter,
-                        syringe=self.syringe,
+                        syringe=syringe_adapter,
                         move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
                         move_horizontal_home=self._move_horizontal_preset("home"),
                         move_vertical_close_plate=self._move_vertical_preset("close"),
@@ -515,7 +520,8 @@ class DeviceController:
 
             self._before_step("Homing syringe pump")
             self._check_stop()
-            self.syringe.home(stop_flag=self._stop_event.is_set)
+            with self._motion_lock:
+                self.syringe.home(stop_flag=self._stop_event.is_set)
             self._append_log("Syringe homed")
             with self._state_lock:
                 self.state.syringe_homed = True
@@ -539,20 +545,21 @@ class DeviceController:
                 self.vertical_axis.connect()
             except Exception as exc:
                 raise RuntimeError(f"Vertical axis unavailable: {exc}")
-        with self._axis_move_lock:
+        with self._motion_lock:
             self.vertical_axis.home(stop_flag=self._stop_event.is_set)
         with self._state_lock:
             self.state.z_homed = True
         self._append_log("Vertical axis homed")
 
     def _home_horizontal_axis(self) -> None:
-        self._assert_horizontal_allowed()
         if not self.horizontal_axis.ready:
             try:
                 self.horizontal_axis.connect()
             except Exception as exc:
                 raise RuntimeError(f"Horizontal axis unavailable: {exc}")
-        with self._axis_move_lock:
+        with self._motion_lock:
+            # Re-check safety interlocks at execution time.
+            self._assert_horizontal_allowed()
             self.horizontal_axis.home(stop_flag=self._stop_event.is_set)
         with self._state_lock:
             self.state.x_homed = True
@@ -592,7 +599,8 @@ class DeviceController:
     def _set_rotary_port(self, port: int, allow_when_running: bool) -> bool:
         if self.state.state == "RUNNING" and not allow_when_running:
             raise RuntimeError("Rotary valve locked while a sequence is running")
-        ok = self.rotary.set_port(port)
+        with self._motion_lock:
+            ok = self.rotary.set_port(port)
         self._log(f"[Rotary] Set port {port}")
         if ok:
             self.rotary_port = port
@@ -625,12 +633,13 @@ class DeviceController:
             return self._noop(f"horizontal preset {key}")
 
         def _fn():
-            self._assert_horizontal_allowed()
             self._ensure_axis_ready(self.horizontal_axis, "Horizontal")
             clamped = self._clamp(target, self.config.horizontal_axis.min_mm, self._axis_max_limits["X"])
             with self._state_lock:
                 self.state.x_homed = False
-            with self._axis_move_lock:
+            with self._motion_lock:
+                # Re-check safety interlocks at execution time.
+                self._assert_horizontal_allowed()
                 self.horizontal_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
 
         return _fn
@@ -650,7 +659,7 @@ class DeviceController:
             clamped = self._clamp(target, self.config.vertical_axis.min_mm, self._axis_max_limits["Z"])
             with self._state_lock:
                 self.state.z_homed = False
-            with self._axis_move_lock:
+            with self._motion_lock:
                 self.vertical_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
 
         return _fn
@@ -694,3 +703,20 @@ class _RelayAdapter:
         if self.stop_event.is_set():
             raise RuntimeError("Operation stopped")
         return self.controller._set_relay(channel, False, allow_when_running=True)
+
+
+class _SyringeAdapter:
+    """Adapter used by sequences to serialize syringe motion and allow STOP checks."""
+
+    def __init__(self, controller: DeviceController, stop_event: threading.Event):
+        self.controller = controller
+        self.stop_event = stop_event
+
+    def goto_absolute(self, volume_ml: float, flow_ml_min: float) -> None:
+        if self.stop_event.is_set():
+            raise RuntimeError("Operation stopped")
+        with self.controller._motion_lock:
+            self.controller.syringe.goto_absolute(volume_ml, flow_ml_min)
+            ok = self.controller.syringe.wait_until_idle(timeout=120, stop_flag=self.stop_event.is_set)
+        if not ok:
+            raise RuntimeError("Syringe move timed out")
