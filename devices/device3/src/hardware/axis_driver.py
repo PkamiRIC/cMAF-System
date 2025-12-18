@@ -4,6 +4,7 @@ Addresses and calibrations mirror the legacy WARP3_v6 GUI.
 """
 
 import threading
+import time
 from typing import Optional
 
 from infra.config import AxisConfig
@@ -28,10 +29,8 @@ class AxisDriver:
 
     def home(self, timeout: float = 5.0, stop_flag: Optional[callable] = None) -> None:
         pump = self._require_pump()
-        pump.home()
-        ok = pump.wait_until_idle(timeout=timeout, stop_flag=stop_flag)
-        if not ok:
-            raise RuntimeError(f"{self.name} homing timed out")
+        pump.home(stop_flag=stop_flag)
+        self._wait_until_idle(timeout=timeout, stop_flag=stop_flag)
 
     def move_mm(self, target_mm: float, rpm: float, stop_flag: Optional[callable] = None) -> None:
         pump = self._require_pump()
@@ -43,7 +42,8 @@ class AxisDriver:
         volume_ml = (target_mm * steps_per_mm) / steps_per_ml
         flow_ml_min = max(rpm, 0.1) * 5  # AXIS_SPEED_STEPS_PER_RPM=5 in legacy
         pump.goto_absolute(volume_ml, flow_ml_min)
-        pump.wait_until_idle(timeout=30.0, stop_flag=stop_flag)
+        target_steps = int(round(target_mm * steps_per_mm))
+        self._wait_until_at_target(target_steps, timeout=30.0, stop_flag=stop_flag)
 
     def read_position_mm(self) -> Optional[float]:
         pump = self._pump
@@ -70,3 +70,70 @@ class AxisDriver:
         """Drop the cached driver so the next call forces a reconnect."""
         with self._lock:
             self._pump = None
+
+    def _wait_until_idle(self, timeout: float, stop_flag: Optional[callable] = None) -> None:
+        """
+        Wait until the drive is truly idle.
+        The legacy busy bit can clear early; standstill/velocity are more reliable.
+        """
+        pump = self._require_pump()
+        start = time.time()
+        vel_thresh_steps = 5
+
+        while True:
+            if stop_flag and stop_flag():
+                raise RuntimeError("Operation stopped")
+
+            st = pump.read_status(max_tries=2)
+            if st is not None:
+                busy = int(st.get("busy", 0))
+                standstill = int(st.get("standstill", 1))
+                actual_velocity = int(st.get("actual_velocity", 0))
+                if busy == 0 and standstill == 1 and abs(actual_velocity) <= vel_thresh_steps:
+                    return
+
+            if (time.time() - start) >= timeout:
+                raise RuntimeError(f"{self.name} motion timed out")
+
+            time.sleep(0.2)
+
+    def _wait_until_at_target(
+        self, target_steps: int, timeout: float, stop_flag: Optional[callable] = None
+    ) -> None:
+        """
+        Wait until at target and standstill.
+        Prevents returning early (which can let subsequent moves violate interlocks).
+        """
+        pump = self._require_pump()
+        start = time.time()
+        vel_thresh_steps = 5
+        tol_steps = max(10, int(round(self.config.steps_per_mm * 0.05)))  # ~0.05mm or >=10 steps
+
+        while True:
+            if stop_flag and stop_flag():
+                raise RuntimeError("Operation stopped")
+
+            st = pump.read_status(max_tries=2)
+            if st is not None:
+                busy = int(st.get("busy", 0))
+                standstill = int(st.get("standstill", 1))
+                actual_velocity = int(st.get("actual_velocity", 0))
+                actual_position = st.get("actual_position", None)
+                try:
+                    actual_position = int(actual_position)
+                except Exception:
+                    actual_position = None
+
+                if (
+                    actual_position is not None
+                    and abs(actual_position - target_steps) <= tol_steps
+                    and busy == 0
+                    and standstill == 1
+                    and abs(actual_velocity) <= vel_thresh_steps
+                ):
+                    return
+
+            if (time.time() - start) >= timeout:
+                raise RuntimeError(f"{self.name} move to target timed out")
+
+            time.sleep(0.2)
