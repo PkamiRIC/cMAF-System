@@ -30,7 +30,7 @@ export default function ControlPanel() {
   const [verticalHomed, setVerticalHomed] = useState(false)
   const [verticalHomedDimmed, setVerticalHomedDimmed] = useState(true)
   const [verticalPosition, setVerticalPosition] = useState(50.0)
-  const [verticalSpeed, setVerticalSpeed] = useState(5.0)
+  const [verticalSpeed, setVerticalSpeed] = useState(1.0)
   const verticalMin = 0
   const verticalMax = 33
 
@@ -40,7 +40,7 @@ export default function ControlPanel() {
   const [horizontalHomed, setHorizontalHomed] = useState(false)
   const [horizontalHomedDimmed, setHorizontalHomedDimmed] = useState(true)
   const [horizontalPosition, setHorizontalPosition] = useState(100.0)
-  const [horizontalSpeed, setHorizontalSpeed] = useState(5.0)
+  const [horizontalSpeed, setHorizontalSpeed] = useState(1.0)
   const horizontalMin = 0
   const horizontalMax = 133
 
@@ -108,7 +108,7 @@ export default function ControlPanel() {
   }
 
   const clamp = (val: number, min: number, max: number) => Math.min(max, Math.max(min, val))
-  const presetRpm = 0.5
+  const presetRpm = 1.0
 
   const moveAxis = async (axis: "X" | "Z", position: number, rpm: number) => {
     try {

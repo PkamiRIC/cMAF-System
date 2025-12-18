@@ -640,7 +640,7 @@ class DeviceController:
             with self._motion_lock:
                 # Re-check safety interlocks at execution time.
                 self._assert_horizontal_allowed()
-                self.horizontal_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
+                self.horizontal_axis.move_mm(clamped, rpm=1.0, stop_flag=self._stop_event.is_set)
 
         return _fn
 
@@ -660,7 +660,7 @@ class DeviceController:
             with self._state_lock:
                 self.state.z_homed = False
             with self._motion_lock:
-                self.vertical_axis.move_mm(clamped, rpm=5.0, stop_flag=self._stop_event.is_set)
+                self.vertical_axis.move_mm(clamped, rpm=1.0, stop_flag=self._stop_event.is_set)
 
         return _fn
 
