@@ -5,15 +5,15 @@ Next.js frontend generated via v0. Points to the Device 3 FastAPI backend.
 ## Local dev
 ```
 cd ui/warp-console
-pnpm install    # or npm install
+npm install
 ```
 Set `NEXT_PUBLIC_API_BASE` to your backend (PLC or localhost).
 
 Examples:
-- Linux/macOS: `NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003 pnpm dev`
+- Linux/macOS: `NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003 npm run dev`
 - Windows PowerShell:
   - `$env:NEXT_PUBLIC_API_BASE="http://warp3plc.local:8003"`
-  - `pnpm dev`
+  - `npm run dev`
 
 Alternatively create `ui/warp-console/.env.local`:
 ```
@@ -70,8 +70,8 @@ Access the UI via the tailnet IP or MagicDNS:
 
 ## Build
 ```
-pnpm build
-pnpm start    # serve production build
+npm run build
+npm run start    # serve production build
 ```
 
 ## Notes

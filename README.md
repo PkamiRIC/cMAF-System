@@ -37,13 +37,13 @@ See the device-specific READMEs for PLC commands and service management.
 ## UI (Next.js, `ui/warp-console`)
 ```
 cd ui/warp-console
-pnpm install   # or npm install
+npm install
 ```
 Set `NEXT_PUBLIC_API_BASE` to your backend (PLC or localhost), then start dev server:
-- Linux/macOS: `NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003 pnpm dev`
+- Linux/macOS: `NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003 npm run dev`
 - Windows PowerShell:
   - `$env:NEXT_PUBLIC_API_BASE="http://warp3plc.local:8003"`
-  - `pnpm dev`
+  - `npm run dev`
 
 Alternatively create `ui/warp-console/.env.local`:
 ```
