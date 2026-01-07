@@ -19,6 +19,10 @@ Alternatively create `ui/warp-console/.env.local`:
 ```
 NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003
 ```
+To point the UI at a Tailscale IP (example):
+```
+echo "NEXT_PUBLIC_API_BASE=http://100.98.170.67:8003" > .env.local
+```
 
 ## Run on the Pi
 If you start the UI on the Pi, `http://localhost:3000` only works on the Pi itself.
