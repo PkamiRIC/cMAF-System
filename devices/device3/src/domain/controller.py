@@ -305,6 +305,7 @@ class DeviceController:
             self.state.last_error = None
             self.state.stop_requested = False
             self.state.sequence_step = "Preparing outputs"
+        self._log("[Init] Initialization begins")
         self._broadcast_status()
 
         self._stop_event.clear()
@@ -489,15 +490,22 @@ class DeviceController:
         """Best-effort: switch off relays before moving axes."""
         try:
             if hasattr(self.relays, "all_off"):
-                self.relays.all_off()
+                ok = self.relays.all_off()
+                if not ok:
+                    raise RuntimeError("relay board all_off did not ACK")
                 for ch in range(1, 9):
                     self.relay_states[ch] = False
             else:
                 for ch in range(1, 9):
                     self.relays.off(ch)
+                    self.relay_states[ch] = False
+            with self._state_lock:
+                self.state.relay_states = dict(self.relay_states)
             self._log("[Relays] All OFF before homing")
+            self._broadcast_status()
             time.sleep(0.5)  # Allow relays to settle
-        except Exception:
+        except Exception as exc:
+            self._log(f"[Relays] All OFF before homing failed: {exc}")
             # Keep going even if one relay write fails
             pass
 
@@ -527,6 +535,7 @@ class DeviceController:
                 self.state.syringe_homed = True
                 self.state.state = "IDLE"
                 self.state.last_error = None
+            self._log("[Init] Initialization complete")
         except Exception as exc:
             with self._state_lock:
                 self.state.state = "ERROR"
