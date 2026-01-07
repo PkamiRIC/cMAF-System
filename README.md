@@ -71,7 +71,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/pi/warp-devices/ui/warp-console
+WorkingDirectory=/home/pi/WARP-Devices/ui/warp-console
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 Environment=NODE_ENV=production
