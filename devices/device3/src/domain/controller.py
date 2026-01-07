@@ -305,6 +305,7 @@ class DeviceController:
             self.state.last_error = None
             self.state.stop_requested = False
             self.state.sequence_step = "Preparing outputs"
+        self._log("[Init] Initialization begins")
         self._broadcast_status()
 
         self._stop_event.clear()
