@@ -305,7 +305,6 @@ class DeviceController:
             self.state.last_error = None
             self.state.stop_requested = False
             self.state.sequence_step = "Preparing outputs"
-        self._log("[Init] Initialization begins")
         self._broadcast_status()
 
         self._stop_event.clear()
@@ -511,6 +510,7 @@ class DeviceController:
 
     def _run_homing(self) -> None:
         try:
+            self._log("[Init] Initialization begins")
             self._check_stop()
             self._prepare_outputs_for_homing()
 
@@ -531,6 +531,7 @@ class DeviceController:
                 self.state.syringe_homed = True
                 self.state.state = "IDLE"
                 self.state.last_error = None
+            self._log("[Init] Initialization finished")
         except Exception as exc:
             with self._state_lock:
                 self.state.state = "ERROR"
