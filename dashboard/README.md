@@ -28,3 +28,5 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up --ssh
 ```
 Then open `http://<tailscale-ip>:5173`.
+You can verify the backend from anywhere on the tailnet:
+- `http://<tailscale-ip>:8003/status`

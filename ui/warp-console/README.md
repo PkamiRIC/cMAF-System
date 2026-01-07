@@ -66,7 +66,10 @@ sudo tailscale up --ssh
 ```
 Access the UI via the tailnet IP or MagicDNS:
 - `http://<tailscale-ip>:3000`
-- `http://WARP3PLC.tailnet-xxxx.ts.net:3000`
+- `http://warp3plc.tailnet-xxxx.ts.net:3000`
+
+Backend check:
+- `http://<tailscale-ip>:8003/status`
 
 ## Build
 ```

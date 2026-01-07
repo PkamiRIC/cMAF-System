@@ -95,7 +95,10 @@ sudo tailscale up --ssh
 ```
 Then access the UI via:
 - Tailnet IP: `http://<tailscale-ip>:3000`
-- Or MagicDNS (if enabled): `http://WARP3PLC.tailnet-xxxx.ts.net:3000`
+- Or MagicDNS (if enabled): `http://warp3plc.tailnet-xxxx.ts.net:3000`
+
+Backend checks (from any device on the tailnet):
+- `http://<tailscale-ip>:8003/status`
 
 ## Legacy dashboard (Vite, `dashboard/`)
 The `dashboard/` app is kept as a simple status card.
