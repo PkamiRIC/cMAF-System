@@ -20,6 +20,54 @@ Alternatively create `ui/warp-console/.env.local`:
 NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003
 ```
 
+## Run on the Pi
+If you start the UI on the Pi, `http://localhost:3000` only works on the Pi itself.
+For LAN access, bind to all interfaces:
+```
+npm run dev -- --hostname 0.0.0.0 --port 3000
+```
+Then open `http://WARP3PLC.local:3000` or `http://<pi-ip>:3000`.
+
+## Start on boot (systemd)
+Build once, then run as a service:
+```
+npm install
+npm run build
+```
+Create `/etc/systemd/system/warp-ui.service`:
+```
+[Unit]
+Description=WARP UI (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/warp-devices/ui/warp-console
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+Environment=NODE_ENV=production
+User=pi
+Group=pi
+
+[Install]
+WantedBy=multi-user.target
+```
+Enable and start:
+```
+sudo systemctl daemon-reload
+sudo systemctl enable --now warp-ui.service
+```
+
+## Remote access (Tailscale)
+Install Tailscale on the Pi:
+```
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --ssh
+```
+Access the UI via the tailnet IP or MagicDNS:
+- `http://<tailscale-ip>:3000`
+- `http://WARP3PLC.tailnet-xxxx.ts.net:3000`
+
 ## Build
 ```
 pnpm build
