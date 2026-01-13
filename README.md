@@ -39,7 +39,8 @@ See the device-specific READMEs for PLC commands and service management.
 cd ui/warp-console
 npm install
 ```
-Set `NEXT_PUBLIC_API_BASE` to your backend (PLC or localhost), then start dev server:
+By default the UI talks to the backend on the same host at port 8003.
+Set `NEXT_PUBLIC_API_BASE` only if the backend is on a different host, then start dev server:
 - Linux/macOS: `NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003 npm run dev`
 - Windows PowerShell:
   - `$env:NEXT_PUBLIC_API_BASE="http://warp3plc.local:8003"`
@@ -49,6 +50,8 @@ Alternatively create `ui/warp-console/.env.local`:
 ```
 NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003
 ```
+Note: If `.env.local` exists, it overrides the automatic same-host behavior. Remove it
+and rebuild if you want the UI to work on both LAN (`warp3plc.local`) and Tailscale IPs.
 
 ### UI on the Pi (local vs remote)
 - If you start the UI on the Pi, `http://localhost:3000` only works on the Pi itself.

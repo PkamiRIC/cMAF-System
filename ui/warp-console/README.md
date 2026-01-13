@@ -24,6 +24,8 @@ To point the UI at a Tailscale IP (example):
 ```
 echo "NEXT_PUBLIC_API_BASE=http://100.98.170.67:8003" > .env.local
 ```
+If `.env.local` exists, it overrides the automatic same-host behavior. Remove it
+and rebuild if you want the UI to work on both LAN (`warp3plc.local`) and Tailscale IPs.
 
 ## Run on the Pi
 If you start the UI on the Pi, `http://localhost:3000` only works on the Pi itself.
