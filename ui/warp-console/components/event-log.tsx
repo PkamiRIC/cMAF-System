@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { getApiBase } from "../lib/api-base"
 
 type StatusPayload = {
   logs?: string[]
 }
 
-// Use an explicit absolute base so requests always hit the PLC.
-const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://warp3plc.local:8003"
+const apiBase = getApiBase()
 
 async function fetchStatusLogs(): Promise<string[] | null> {
   try {

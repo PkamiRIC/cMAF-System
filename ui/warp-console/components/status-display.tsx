@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import RotaryValveWidget from "./rotary-valve-widget"
 import SequencePanel from "./sequence-panel"
+import { getApiBase } from "../lib/api-base"
 
 export type DeviceStatus = {
   state?: string
@@ -21,8 +22,7 @@ export type DeviceStatus = {
   syringe_homed?: boolean
 }
 
-// Use an explicit absolute base so requests always hit the PLC.
-const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://warp3plc.local:8003"
+const apiBase = getApiBase()
 
 async function post(path: string) {
   const res = await fetch(`${apiBase}${path}`, { method: "POST" })

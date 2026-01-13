@@ -4,9 +4,9 @@ import { useEffect, useState } from "react"
 import type { DeviceStatus } from "./status-display"
 import AxisWidget from "./axis-widget"
 import SyringeWidget from "./syringe-widget"
+import { getApiBase } from "../lib/api-base"
 
-// Ensure we talk directly to the PLC by default.
-const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://warp3plc.local:8003"
+const apiBase = getApiBase()
 
 async function post(path: string, body?: any) {
   const res = await fetch(`${apiBase}${path}`, {

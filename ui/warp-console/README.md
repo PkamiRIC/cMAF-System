@@ -7,7 +7,8 @@ Next.js frontend generated via v0. Points to the Device 3 FastAPI backend.
 cd ui/warp-console
 npm install
 ```
-Set `NEXT_PUBLIC_API_BASE` to your backend (PLC or localhost).
+By default the UI talks to the backend on the same host at port 8003.
+Set `NEXT_PUBLIC_API_BASE` only if the backend is on a different host.
 
 Examples:
 - Linux/macOS: `NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003 npm run dev`
