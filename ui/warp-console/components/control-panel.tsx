@@ -108,7 +108,6 @@ export default function ControlPanel() {
   }
 
   const clamp = (val: number, min: number, max: number) => Math.min(max, Math.max(min, val))
-  const presetRpm = 1.0
 
   const moveAxis = async (axis: "X" | "Z", position: number, rpm: number) => {
     try {
@@ -187,17 +186,17 @@ export default function ControlPanel() {
           onPosition1={() => {
             const target = clamp(0, verticalMin, verticalMax)
             setVerticalPos(target)
-            moveAxis("Z", target, presetRpm)
+            moveAxis("Z", target, verticalSpeed)
           }}
           onPosition2={() => {
             const target = clamp(15, verticalMin, verticalMax)
             setVerticalPos(target)
-            moveAxis("Z", target, presetRpm)
+            moveAxis("Z", target, verticalSpeed)
           }}
           onPosition3={() => {
             const target = clamp(33, verticalMin, verticalMax)
             setVerticalPos(target)
-            moveAxis("Z", target, presetRpm)
+            moveAxis("Z", target, verticalSpeed)
           }}
           onHome={() => {
             setVerticalPos(verticalMin)
@@ -228,17 +227,17 @@ export default function ControlPanel() {
           onPosition1={() => {
             const target = clamp(0, horizontalMin, horizontalMax)
             setHorizontalPos(target)
-            moveAxis("X", target, presetRpm)
+            moveAxis("X", target, horizontalSpeed)
           }}
           onPosition2={() => {
             const target = clamp(26, horizontalMin, horizontalMax)
             setHorizontalPos(target)
-            moveAxis("X", target, presetRpm)
+            moveAxis("X", target, horizontalSpeed)
           }}
           onPosition3={() => {
             const target = clamp(133, horizontalMin, horizontalMax)
             setHorizontalPos(target)
-            moveAxis("X", target, presetRpm)
+            moveAxis("X", target, horizontalSpeed)
           }}
           onHome={() => {
             setHorizontalPos(horizontalMin)
