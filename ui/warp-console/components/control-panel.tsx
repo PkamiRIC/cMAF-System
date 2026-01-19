@@ -225,12 +225,12 @@ export default function ControlPanel() {
           homed={horizontalHomed}
           homedDimmed={horizontalHomedDimmed}
           onPosition1={() => {
-            const target = clamp(0, horizontalMin, horizontalMax)
+            const target = clamp(26, horizontalMin, horizontalMax)
             setHorizontalPos(target)
             moveAxis("X", target, horizontalSpeed)
           }}
           onPosition2={() => {
-            const target = clamp(26, horizontalMin, horizontalMax)
+            const target = clamp(50, horizontalMin, horizontalMax)
             setHorizontalPos(target)
             moveAxis("X", target, horizontalSpeed)
           }}
