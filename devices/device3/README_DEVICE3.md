@@ -65,3 +65,13 @@ vertical_axis.port: /dev/ttySC3, address: 78  # 0x4E, min_mm: 0, max_mm: 33
 horizontal_axis.port: /dev/ttySC3, address: 77 # 0x4D, vertical_guard_mm: 10
 ```
 Update config if wiring/ports/addresses change, then restart the service.
+
+## Axis presets (quick moves)
+Horizontal Axis:
+- Filtering: 133.0 mm
+- Filter Out: 50.0 mm
+- Filter In: 26.0 mm
+
+Vertical Axis:
+- Open: 0.0 mm
+- Close: 33.0 mm

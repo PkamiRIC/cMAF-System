@@ -627,11 +627,9 @@ class DeviceController:
     def _move_horizontal_preset(self, key: str) -> Callable[[], None]:
         presets = {
             "filtering": 133.0,
-            "filter out": 26.0,
-            "filter in": 0.0,
+            "filter out": 50.0,
+            "filter in": 26.0,
             "home": 0.0,
-            "loading 0mm": 0.0,
-            "loadin 0mm": 0.0,
         }
         target = presets.get(key.lower())
         if target is None:
