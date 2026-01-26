@@ -7,6 +7,19 @@ Structure:
 - `dashboard`: Legacy React/Vite dashboard (simple status card)
 - `ui/warp-console`: Next.js frontend (recommended UI)
 
+## SD Card Setup (Device 2)
+### Step 1 - Set hostname to WARP2PLC
+Run on the Pi:
+```
+sudo hostnamectl set-hostname WARP2PLC
+sudo sed -i 's/127.0.1.1.*/127.0.1.1\tWARP2PLC/' /etc/hosts
+sudo reboot
+```
+Verify after reboot:
+```
+hostname
+```
+
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
