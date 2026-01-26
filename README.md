@@ -53,6 +53,15 @@ Then reconnect:
 ssh pi@10.0.46.111
 ```
 
+### Step 6 - Create venv and install backend dependencies
+Run on the Pi:
+```
+cd ~/cMAF-System/device
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
