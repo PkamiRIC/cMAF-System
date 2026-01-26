@@ -27,6 +27,15 @@ sudo apt-get update
 sudo apt-get install -y git python3-venv python3-pip
 ```
 
+### Step 3 - Install Node.js 20.x
+Run on the Pi:
+```
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node -v
+npm -v
+```
+
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
