@@ -1,4 +1,4 @@
-# WARP Dashboard (React + Vite)
+# DNA Extraction System Dashboard (React + Vite)
 
 ## Install & run
 ```
@@ -11,11 +11,11 @@ Note: `localhost` only works on the same machine. For LAN access:
 ```
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
-Then browse to `http://WARP3PLC.local:5173` or `http://<pi-ip>:5173`.
+Then browse to `http://<plc-hostname>:5173` or `http://<pi-ip>:5173`.
 
 ## API integration
 - Backend URL is configured via `dashboard/.env`:
-  - `VITE_DEVICE3_URL=http://warp3plc.local:8003` (or `http://localhost:8003`)
+  - `VITE_DEVICE3_URL=http://<plc-hostname>:8003` (or `http://localhost:8003`)
 - The dashboard currently polls `GET /status` every ~2s.
 - Device 3 also supports realtime updates via `GET /events/sse` (used by `ui/warp-console`).
 

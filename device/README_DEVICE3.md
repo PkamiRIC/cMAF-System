@@ -1,4 +1,4 @@
-# Device 3 PLC Guide (WARP3PLC)
+# DNA Extraction System PLC Guide
 
 SSH into the PLC:
 ```
@@ -9,8 +9,8 @@ ssh pi@<PLC_IP>
 
 ## Project Paths (on PLC)
 ```
-/home/pi/projects/WARP-Devices/devices/device3
-  src/          # FastAPI backend package (entry: src/main.py)
+/home/pi/DNA-Extraction-System
+  device/       # FastAPI backend package (entry: src/main.py)
   config/       # device3.yaml
   .venv/        # Python virtual environment
   requirements.txt
@@ -18,7 +18,7 @@ ssh pi@<PLC_IP>
 
 ## Run Backend (manual)
 ```
-cd ~/projects/WARP-Devices/devices/device3
+cd ~/DNA-Extraction-System/device
 source .venv/bin/activate
 python -m src.main --config config/device3.yaml
 ```
@@ -35,8 +35,8 @@ journalctl -u device3.service -n 50 --no-pager
 
 ## Update code / deps
 ```
-cd ~/projects/WARP-Devices && git pull
-cd devices/device3 && source .venv/bin/activate
+cd ~/DNA-Extraction-System && git pull
+cd device && source .venv/bin/activate
 pip install -r requirements.txt
 sudo systemctl restart device3.service
 ```

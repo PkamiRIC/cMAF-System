@@ -1,21 +1,19 @@
-# WARP Devices Monorepo
+# DNA Extraction System
 
-Code for all WARP PLC devices and the dashboard.
+Backend + UI for the DNA Extraction System PLC device.
 
 Structure:
-- `devices/device1`: Device 1 backend (placeholder - no code yet)
-- `devices/device2`: Device 2 backend (placeholder - no code yet)
-- `devices/device3`: Device 3 FastAPI backend (live)
+- `device`: FastAPI backend (live)
 - `dashboard`: Legacy React/Vite dashboard (simple status card)
-- `ui/warp-console`: Next.js frontend for Device 3 (recommended UI)
+- `ui/warp-console`: Next.js frontend (recommended UI)
 
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
 
-## Quick start (Device 3 backend, local)
+## Quick start (backend, local)
 ```
-cd devices/device3
+cd device
 python -m venv .venv
 # Linux/macOS:
 #   source .venv/bin/activate
@@ -26,13 +24,11 @@ python -m src.main --config config/device3.yaml
 ```
 Backend: http://localhost:8003 (try `GET /status`)
 
-Device 3 API highlights:
+API highlights:
 - `GET /status` (includes relay states, rotary port, current step, logs)
 - `GET /events/sse` (server-sent events stream for realtime UI updates)
 - `POST /command/start/{sequence_name}` (sequence1/sequence2), `stop`, `home`, `emergency_stop`
 - `POST /relays/{ch}/{on|off}`, `POST /rotary/{port}`, `POST /syringe/move`
-
-See the device-specific READMEs for PLC commands and service management.
 
 ## UI (Next.js, `ui/warp-console`)
 ```
@@ -41,21 +37,20 @@ npm install
 ```
 By default the UI talks to the backend on the same host at port 8003.
 Set `NEXT_PUBLIC_API_BASE` only if the backend is on a different host, then start dev server:
-- Linux/macOS: `NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003 npm run dev`
+- Linux/macOS: `NEXT_PUBLIC_API_BASE=http://<plc-hostname>:8003 npm run dev`
 - Windows PowerShell:
-  - `$env:NEXT_PUBLIC_API_BASE="http://warp3plc.local:8003"`
+  - `$env:NEXT_PUBLIC_API_BASE="http://<plc-hostname>:8003"`
   - `npm run dev`
 
 Alternatively create `ui/warp-console/.env.local`:
 ```
-NEXT_PUBLIC_API_BASE=http://warp3plc.local:8003
+NEXT_PUBLIC_API_BASE=http://<plc-hostname>:8003
 ```
-Note: If `.env.local` exists, it overrides the automatic same-host behavior. Remove it
-and rebuild if you want the UI to work on both LAN (`warp3plc.local`) and Tailscale IPs.
+Note: If `.env.local` exists, it overrides the automatic same-host behavior.
 
 ### UI on the Pi (local vs remote)
 - If you start the UI on the Pi, `http://localhost:3000` only works on the Pi itself.
-- From another device, use the Pi hostname or IP, e.g. `http://WARP3PLC.local:3000` or `http://<pi-ip>:3000`.
+- From another device, use the Pi hostname or IP, e.g. `http://<plc-hostname>:3000` or `http://<pi-ip>:3000`.
 - For LAN access in dev mode, bind to all interfaces:
   - `npm run dev -- --hostname 0.0.0.0 --port 3000`
 
@@ -74,7 +69,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/pi/WARP-Devices/ui/warp-console
+WorkingDirectory=/home/pi/DNA-Extraction-System/ui/warp-console
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 Environment=NODE_ENV=production
@@ -89,19 +84,6 @@ Enable and start:
 sudo systemctl daemon-reload
 sudo systemctl enable --now warp-ui.service
 ```
-
-### Remote access (Tailscale)
-Tailscale gives you a private IP and DNS name to reach the Pi remotely.
-```
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up --ssh
-```
-Then access the UI via:
-- Tailnet IP: `http://<tailscale-ip>:3000`
-- Or MagicDNS (if enabled): `http://warp3plc.tailnet-xxxx.ts.net:3000`
-
-Backend checks (from any device on the tailnet):
-- `http://<tailscale-ip>:8003/status`
 
 ## Legacy dashboard (Vite, `dashboard/`)
 The `dashboard/` app is kept as a simple status card.
