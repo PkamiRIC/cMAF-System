@@ -20,6 +20,13 @@ Verify after reboot:
 hostname
 ```
 
+### Step 2 - Install base packages
+Run on the Pi:
+```
+sudo apt-get update
+sudo apt-get install -y git python3-venv python3-pip
+```
+
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
