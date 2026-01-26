@@ -36,6 +36,13 @@ node -v
 npm -v
 ```
 
+### Step 4 - Clone the repo
+Run on the Pi:
+```
+cd ~
+git clone https://github.com/PkamiRIC/cMAF-System.git
+```
+
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
