@@ -1,0 +1,42 @@
+device_id: "device2"
+network:
+  api_port: 8002
+relay:
+  port: "/dev/ttySC3"
+  address: 1
+  baudrate: 9600
+  parity: "N"
+  timeout: 0.3
+syringe:
+  port: "/dev/ttySC3"
+  address: 76
+  baudrate: 9600
+  steps_per_ml: 8000000
+  velocity_calib: 8000
+  timeout: 1.0
+vertical_axis:
+  port: "/dev/ttySC3"
+  address: 78        # 0x4E
+  steps_per_ml: 2000
+  velocity_calib: 1000
+  steps_per_mm: 2000
+  min_mm: 0
+  max_mm: 25
+  timeout: 1.0
+horizontal_axis:
+  port: "/dev/ttySC3"
+  address: 77        # 0x4D
+  steps_per_ml: 2000
+  velocity_calib: 1000
+  steps_per_mm: 2000
+  min_mm: 0
+  max_mm: null
+  timeout: 1.0
+  vertical_guard_mm: 10
+flow_sensor:
+  port: "/dev/ttyUSB0"
+  medium: "water"
+temperature:
+  command_pin: "Q0.6"
+  ready_pin: "I0.11"
+  ready_gpio_pin: 8

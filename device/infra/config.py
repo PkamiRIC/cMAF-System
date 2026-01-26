@@ -5,11 +5,11 @@ from pydantic import BaseModel
 
 
 class NetworkConfig(BaseModel):
-    api_port: int = 8003
+    api_port: int = 8002
 
 
 class DeviceConfig(BaseModel):
-    device_id: str = "device3"
+    device_id: str = "device2"
     network: NetworkConfig = NetworkConfig()
 
 
@@ -30,8 +30,8 @@ def load_config(path: str | None) -> DeviceConfig:
     with cfg_path.open("r", encoding="utf-8") as f:
         raw: dict[str, Any] = yaml.safe_load(f) or {}
 
-    device_id = raw.get("device_id", "device3")
+    device_id = raw.get("device_id", "device2")
     net_raw = raw.get("network", {}) or {}
-    network = NetworkConfig(api_port=net_raw.get("api_port", 8003))
+    network = NetworkConfig(api_port=net_raw.get("api_port", 8002))
 
     return DeviceConfig(device_id=device_id, network=network)
