@@ -62,6 +62,21 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Step 7 - Create device2 config
+Run on the Pi:
+```
+cd ~/cMAF-System/device/config
+cp device3.yaml device2.yaml
+```
+Edit `device2.yaml` and set:
+- `device_id: "device2"`
+- `network.api_port: 8002`
+- `relay.address: 1`
+- `syringe` port/address/steps_per_ml/velocity_calib
+- `vertical_axis` min/max to 0..25
+- `flow_sensor.port: /dev/ttyUSB0`
+- `temperature` pins (Q0.6/I0.11/8)
+
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
