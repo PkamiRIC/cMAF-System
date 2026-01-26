@@ -77,6 +77,31 @@ Edit `device2.yaml` and set:
 - `flow_sensor.port: /dev/ttyUSB0`
 - `temperature` pins (Q0.6/I0.11/8)
 
+### Step 8 - Create backend systemd service
+Run on the Pi:
+```
+sudo tee /etc/systemd/system/device2.service > /dev/null <<'EOF'
+[Unit]
+Description=cMAF Device 2 Backend (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/cMAF-System/device
+ExecStart=/home/pi/cMAF-System/device/.venv/bin/python -m src.main --config config/device2.yaml
+Restart=on-failure
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now device2.service
+sudo systemctl status device2.service --no-pager
+```
+
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
