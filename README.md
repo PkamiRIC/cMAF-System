@@ -43,6 +43,16 @@ cd ~
 git clone https://github.com/PkamiRIC/cMAF-System.git
 ```
 
+### Step 5 - Fix SSH host key warning after reflash
+If SSH says the host key changed (new SD card), run on your PC:
+```
+ssh-keygen -R 10.0.46.111
+```
+Then reconnect:
+```
+ssh pi@10.0.46.111
+```
+
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
