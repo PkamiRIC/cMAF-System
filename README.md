@@ -114,6 +114,46 @@ sudo systemctl enable --now device2.service
 sudo systemctl status device2.service --no-pager
 ```
 
+### Step 9 - Build Next.js UI on PC
+Run on your PC:
+```
+cd C:\Users\p.kamintzis\OneDrive - Cy.R.I.C. Cyprus Research and Innovation Center Ltd\Work\WARP\cMAF-System\ui\warp-console
+npm install
+npm run build
+```
+
+### Step 10 - Copy UI build to the Pi
+Run on your PC:
+```
+scp -r "C:\Users\p.kamintzis\OneDrive - Cy.R.I.C. Cyprus Research and Innovation Center Ltd\Work\WARP\cMAF-System\ui\warp-console\.next" pi@10.0.46.111:/home/pi/cMAF-System/ui/warp-console/
+```
+
+### Step 11 - Create UI systemd service (port 3002)
+Run on the Pi:
+```
+sudo tee /etc/systemd/system/warp-ui.service > /dev/null <<'EOF'
+[Unit]
+Description=cMAF UI (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/cMAF-System/ui/warp-console
+ExecStart=/usr/bin/npm run start -- --hostname 0.0.0.0 --port 3002
+Restart=on-failure
+Environment=NODE_ENV=production
+User=pi
+Group=pi
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now warp-ui.service
+sudo systemctl status warp-ui.service --no-pager
+```
+
 ## Prereqs
 - Python 3.10+ (backend)
 - Node.js 20+ (frontend)
