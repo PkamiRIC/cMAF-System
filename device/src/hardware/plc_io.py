@@ -30,7 +30,7 @@ class PlcIo:
 
         if plc:
             try:
-                plc.init("RPIPLC_V4", "RPIPLC_38AR")
+                plc.init("RPIPLC_V6", "RPIPLC_38AR")
             except Exception:
                 # Keep going in simulated mode if init fails
                 pass

@@ -21,7 +21,7 @@ def ensure_plc_init() -> None:
         if _plc_initialized:
             return
         try:
-            plc.init("RPIPLC_V4", "RPIPLC_38AR")
+            plc.init("RPIPLC_V6", "RPIPLC_38AR")
             _plc_initialized = True
         except Exception:
             # leave uninitialized; callers will tolerate None/failed ops
