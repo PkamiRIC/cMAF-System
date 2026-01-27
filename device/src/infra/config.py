@@ -7,7 +7,7 @@ import yaml
 
 @dataclass
 class NetworkConfig:
-    api_port: int = 8003
+    api_port: int = 8002
 
 
 @dataclass
@@ -94,7 +94,7 @@ class TemperatureConfig:
 
 @dataclass
 class DeviceConfig:
-    device_id: str = "device3"
+    device_id: str = "device2"
     network: NetworkConfig = field(default_factory=NetworkConfig)
     relay: RelayConfig = field(default_factory=RelayConfig)
     syringe: SyringeConfig = field(default_factory=SyringeConfig)
@@ -122,7 +122,7 @@ def load_config(path: str) -> DeviceConfig:
     data = _load_yaml(path)
 
     return DeviceConfig(
-        device_id=data.get("device_id", "device3"),
+        device_id=data.get("device_id", "device2"),
         network=NetworkConfig(**data.get("network", {})),
         relay=RelayConfig(**data.get("relay", {})),
         syringe=SyringeConfig(**data.get("syringe", {})),

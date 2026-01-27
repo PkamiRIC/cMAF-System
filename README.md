@@ -30,16 +30,19 @@ sudo apt-get install -y git python3-venv python3-pip
 ### Step 3 - Install Industrial Shields librpiplc
 Run on the Pi:
 ```
-sudo apt update
-sudo apt install -y git cmake
-cd ~
-git clone https://github.com/Industrial-Shields/librpiplc.git
-cd ~/librpiplc
-cmake -B build/ -DPLC_VERSION=RPIPLC_V6 -DPLC_MODEL=RPIPLC_38AR
-cmake --build build/ -- -j $(nproc)
-sudo cmake --install build/
-sudo chown -R $USER:$USER ~/test/
-sudo ldconfig
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo mkdir -p /etc/apt/keyrings
+sudo curl -fsSL https://apps.industrialshields.com/main/DebRepo/PublicKey.gpg -o /etc/apt/keyrings/industrialshields.gpg
+echo "deb [signed-by=/etc/apt/keyrings/industrialshields.gpg] https://apps.industrialshields.com/main/DebRepo/ ./" | sudo tee /etc/apt/sources.list.d/industrialshields.list
+sudo apt-get update
+sudo apt-get install -y librpiplc python3-librpiplc
+python3 - <<'PY'
+import librpiplc
+from librpiplc import rpiplc as plc
+print("librpiplc OK:", librpiplc.__file__)
+print("rpiplc ok")
+PY
 ```
 
 ### Step 4 - Install Node.js 20.x
@@ -88,6 +91,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+Note: If `device2.service` fails with `ModuleNotFoundError: simple_pid`, install it:
+```
+pip install simple-pid
+```
 
 ### Step 9 - Create device2 config
 Run on the Pi:
@@ -128,6 +135,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now device2.service
 sudo systemctl status device2.service --no-pager
 ```
+Note: Ensure the service uses `config/device2.yaml` (not `device3.yaml`).
 
 ### Step 11 - Build Next.js UI on PC
 Run on your PC:
@@ -205,7 +213,7 @@ API highlights:
 - `GET /status` (includes relay states, rotary port, current step, logs)
 - `GET /events/sse` (server-sent events stream for realtime UI updates)
 - `POST /command/start/{sequence_name}` (sequence1/sequence2), `stop`, `home`, `emergency_stop`
-- `POST /relays/{ch}/{on|off}`, `POST /rotary/{port}`, `POST /syringe/move`
+- `POST /relays/{ch}/{on|off}`, `POST /syringe/move`
 
 ## UI (Next.js, `ui/warp-console`)
 ```
