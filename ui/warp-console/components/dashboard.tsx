@@ -14,7 +14,7 @@ export default function Dashboard() {
         {/* Row 1: Axis Controls and Syringe */}
         <ControlPanel />
 
-        {/* Row 2: Rotary Valve, Sequences, System Controls */}
+        {/* Row 2: Sequences and System Controls */}
         <StatusDisplay />
 
         {/* Row 3: Event Log */}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react"
-import RotaryValveWidget from "./rotary-valve-widget"
 import SequencePanel from "./sequence-panel"
 import { getApiBase } from "../lib/api-base"
 
@@ -9,7 +8,6 @@ export type DeviceStatus = {
   state?: string
   current_sequence?: string | null
   sequence_step?: string | null
-  rotary_port?: number | null
   last_error?: string | null
   syringe_busy?: boolean
   syringe_volume_ml?: number | null
@@ -17,9 +15,17 @@ export type DeviceStatus = {
   x_homed?: boolean
   z_homed?: boolean
   syringe_homed?: boolean
-  x_homed?: boolean
-  z_homed?: boolean
-  syringe_homed?: boolean
+  peristaltic_enabled?: boolean
+  peristaltic_direction_cw?: boolean
+  peristaltic_low_speed?: boolean
+  pid_enabled?: boolean
+  pid_setpoint?: number
+  pid_hall?: number | null
+  flow_ml_min?: number
+  total_ml?: number
+  flow_running?: boolean
+  temp_enabled?: boolean
+  temp_ready?: boolean | null
 }
 
 const apiBase = getApiBase()
@@ -38,9 +44,9 @@ async function fetchStatus(): Promise<DeviceStatus> {
 export default function StatusDisplay() {
   const [status, setStatus] = useState<DeviceStatus>({})
   const [error, setError] = useState<string | null>(null)
-  const activeSequence = useMemo<"seq1" | "seq2" | "seq3" | null>(() => {
+  const activeSequence = useMemo<"seq1" | "seq2" | "clean" | null>(() => {
     if (status.current_sequence?.toLowerCase().includes("2")) return "seq2"
-    if (status.current_sequence?.toLowerCase().includes("3")) return "seq3"
+    if (status.current_sequence?.toLowerCase().includes("clean")) return "clean"
     if (status.current_sequence?.toLowerCase().includes("1")) return "seq1"
     return null
   }, [status.current_sequence])
@@ -82,8 +88,8 @@ export default function StatusDisplay() {
     }
   }
 
-  const handleStartSequence = async (seq: "seq1" | "seq2" | "seq3") => {
-    const name = seq === "seq2" ? "sequence2" : "sequence1"
+  const handleStartSequence = async (seq: "seq1" | "seq2" | "clean") => {
+    const name = seq === "seq2" ? "sequence2" : seq === "clean" ? "cleaning" : "sequence1"
     try {
       await post(`/command/start/${name}`)
     } catch (err: any) {
@@ -91,50 +97,32 @@ export default function StatusDisplay() {
     }
   }
 
-  const handleRotaryChange = async (port: number) => {
-    try {
-      await post(`/rotary/${port}`)
-      setStatus((s) => ({ ...s, rotary_port: port }))
-    } catch (err: any) {
-      setError(err?.message || "Rotary failed")
-    }
-  }
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">
-      {/* Rotary Valve */}
-      <RotaryValveWidget
-        activePort={status.rotary_port || 1}
-        onSelect={handleRotaryChange}
-        locked={status.state === "RUNNING"}
+      <SequencePanel
+        activeSequence={activeSequence}
+        setActiveSequence={handleStartSequence}
+        status={status}
+        error={error}
       />
 
-      <div className="flex flex-col gap-6 h-full">
-        <SequencePanel
-          activeSequence={activeSequence}
-          setActiveSequence={handleStartSequence}
-          status={status}
-          error={error}
-        />
-
-        {/* System Controls Panel */}
-        <div className="premium-card p-6 flex-1 flex flex-col justify-center">
-          <h2 className="text-lg font-semibold text-foreground mb-6">System Controls</h2>
-          <div className="space-y-4">
-            <button
-              onClick={handleInitialize}
-              className="w-full px-6 py-4 bg-success text-success-foreground rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-success/20"
-            >
-              Initialize
-            </button>
-            <button
-              onClick={handleStop}
-              className="w-full px-6 py-4 bg-destructive text-destructive-foreground rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-destructive/20"
-            >
-              STOP ALL
-            </button>
-            {error && <p className="text-xs text-destructive mt-2">{error}</p>}
-          </div>
+      {/* System Controls Panel */}
+      <div className="premium-card p-6 flex flex-col justify-center">
+        <h2 className="text-lg font-semibold text-foreground mb-6">System Controls</h2>
+        <div className="space-y-4">
+          <button
+            onClick={handleInitialize}
+            className="w-full px-6 py-4 bg-success text-success-foreground rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-success/20"
+          >
+            Initialize
+          </button>
+          <button
+            onClick={handleStop}
+            className="w-full px-6 py-4 bg-destructive text-destructive-foreground rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-destructive/20"
+          >
+            STOP ALL
+          </button>
+          {error && <p className="text-xs text-destructive mt-2">{error}</p>}
         </div>
       </div>
     </div>

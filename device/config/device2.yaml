@@ -36,7 +36,27 @@ horizontal_axis:
 flow_sensor:
   port: "/dev/ttyUSB0"
   medium: "water"
+  interval_ms: 20
+  scale_factor: 500.0
+  stale_restart_limit: 20
 temperature:
   command_pin: "Q0.6"
   ready_pin: "I0.11"
   ready_gpio_pin: 8
+peristaltic:
+  enable_pin: "Q0.0"
+  dir_forward_pin: "Q0.1"
+  dir_reverse_pin: "Q0.2"
+  speed_pin: "Q0.7"
+pid_valve:
+  step_pin: "Q0.5"
+  dir_pin: "Q0.4"
+  en_pin: "Q0.3"
+  hall_pin: "I0.12"
+  pid_kp: 1.6
+  pid_ki: 0.25
+  pid_kd: 0.02
+  sample_time: 0.08
+  output_min: -1.5
+  output_max: 1.5
+  setpoint_default: 1.0

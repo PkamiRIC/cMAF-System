@@ -21,6 +21,30 @@ class AxisMove(BaseModel):
     rpm: float
 
 
+class PeristalticEnable(BaseModel):
+    enabled: bool
+
+
+class PeristalticDirection(BaseModel):
+    forward: bool
+
+
+class PeristalticSpeed(BaseModel):
+    low_speed: bool
+
+
+class PidEnable(BaseModel):
+    enabled: bool
+
+
+class PidSetpoint(BaseModel):
+    value: float
+
+
+class TempEnable(BaseModel):
+    enabled: bool
+
+
 def create_app(config: DeviceConfig, config_path: str):
     controller = DeviceController(config)
 
@@ -77,14 +101,6 @@ def create_app(config: DeviceConfig, config_path: str):
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": ok}
 
-    @app.post("/rotary/{port}")
-    def rotary(port: int):
-        try:
-            ok = controller.set_rotary_port(port)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        return {"ok": ok}
-
     @app.post("/syringe/move")
     def syringe_move(payload: SyringeMove):
         try:
@@ -126,6 +142,85 @@ def create_app(config: DeviceConfig, config_path: str):
     def axis_home(axis: Literal["X", "Z", "x", "z"]):
         try:
             controller.home_axis(axis)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/peristaltic/enable")
+    def peristaltic_enable(payload: PeristalticEnable):
+        try:
+            controller.set_peristaltic_enabled(payload.enabled)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/peristaltic/direction")
+    def peristaltic_direction(payload: PeristalticDirection):
+        try:
+            controller.set_peristaltic_direction(payload.forward)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/peristaltic/speed")
+    def peristaltic_speed(payload: PeristalticSpeed):
+        try:
+            controller.set_peristaltic_speed(payload.low_speed)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/pid/enable")
+    def pid_enable(payload: PidEnable):
+        try:
+            controller.set_pid_enabled(payload.enabled)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/pid/setpoint")
+    def pid_setpoint(payload: PidSetpoint):
+        try:
+            controller.set_pid_setpoint(payload.value)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/pid/home")
+    def pid_home():
+        try:
+            controller.pid_home()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/pid/close")
+    def pid_close():
+        try:
+            controller.pid_close()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/flow/start")
+    def flow_start():
+        controller.flow_start()
+        return {"ok": True}
+
+    @app.post("/flow/stop")
+    def flow_stop():
+        controller.flow_stop()
+        return {"ok": True}
+
+    @app.post("/flow/reset")
+    def flow_reset():
+        controller.flow_reset()
+        return {"ok": True}
+
+    @app.post("/temperature/enable")
+    def temp_enable(payload: TempEnable):
+        try:
+            controller.set_temp_enabled(payload.enabled)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}

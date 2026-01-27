@@ -3,8 +3,8 @@
 import type { DeviceStatus } from "./status-display"
 
 interface SequencePanelProps {
-  activeSequence: "seq1" | "seq2" | "seq3" | null
-  setActiveSequence: (seq: "seq1" | "seq2" | "seq3") => void
+  activeSequence: "seq1" | "seq2" | "clean" | null
+  setActiveSequence: (seq: "seq1" | "seq2" | "clean") => void
   status?: DeviceStatus
   error?: string | null
 }
@@ -36,14 +36,14 @@ export default function SequencePanel({ activeSequence, setActiveSequence, statu
           Sequence 2
         </button>
         <button
-          onClick={() => setActiveSequence("seq3")}
+          onClick={() => setActiveSequence("clean")}
           className={`flex-1 px-4 py-3 rounded-xl font-semibold transition-all shadow-md ${
-            activeSequence === "seq3"
+            activeSequence === "clean"
               ? "bg-primary text-primary-foreground shadow-primary/20"
               : "bg-secondary text-secondary-foreground hover:bg-muted"
           }`}
         >
-          Sequence 3
+          Cleaning
         </button>
       </div>
 
@@ -55,8 +55,8 @@ export default function SequencePanel({ activeSequence, setActiveSequence, statu
               ? "Sequence 1"
               : activeSequence === "seq2"
               ? "Sequence 2"
-              : activeSequence === "seq3"
-              ? "Sequence 3"
+              : activeSequence === "clean"
+              ? "Cleaning"
               : "None"}
           </span>
         </div>

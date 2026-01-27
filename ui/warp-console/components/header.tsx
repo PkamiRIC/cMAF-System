@@ -11,9 +11,9 @@ export default function Header() {
           </div>
           <div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              WARP
+              cMAF Device 2
             </h1>
-            <p className="text-sm text-muted-foreground font-medium">Water Treatment Control System</p>
+            <p className="text-sm text-muted-foreground font-medium">cMAF Control System</p>
           </div>
         </div>
 

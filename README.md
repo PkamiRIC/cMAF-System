@@ -142,8 +142,21 @@ Run on your PC:
 ```
 scp -r "C:\Users\p.kamintzis\OneDrive - Cy.R.I.C. Cyprus Research and Innovation Center Ltd\Work\WARP\cMAF-System\ui\warp-console\.next" pi@10.0.46.111:/home/pi/cMAF-System/ui/warp-console/
 ```
+Verify on the Pi (must exist before starting the UI service):
+```
+ls -ld /home/pi/cMAF-System/ui/warp-console/.next
+```
+If `.next` is missing, re-run the `scp` command above.
 
-### Step 13 - Create UI systemd service (port 3002)
+### Step 13 - Install UI runtime deps on the Pi
+Run on the Pi (required for `next start`):
+```
+cd /home/pi/cMAF-System/ui/warp-console
+npm install --omit=dev
+```
+Tip (if install is slow): add `--no-audit --no-fund`.
+
+### Step 14 - Create UI systemd service (port 3002)
 Run on the Pi:
 ```
 sudo tee /etc/systemd/system/warp-ui.service > /dev/null <<'EOF'

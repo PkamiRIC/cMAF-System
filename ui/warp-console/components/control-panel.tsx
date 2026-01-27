@@ -24,23 +24,23 @@ async function fetchStatus(): Promise<DeviceStatus> {
 }
 
 export default function ControlPanel() {
-  const [verticalPos, setVerticalPos] = useState(25.0)
-  const [verticalTarget, setVerticalTarget] = useState(50.0)
-  const [verticalVelocity, setVerticalVelocity] = useState(40.0)
+  const [verticalPos, setVerticalPos] = useState(0.0)
+  const [verticalTarget, setVerticalTarget] = useState(25.0)
+  const [verticalVelocity, setVerticalVelocity] = useState(5.0)
   const [verticalHomed, setVerticalHomed] = useState(false)
   const [verticalHomedDimmed, setVerticalHomedDimmed] = useState(true)
-  const [verticalPosition, setVerticalPosition] = useState(50.0)
-  const [verticalSpeed, setVerticalSpeed] = useState(1.0)
+  const [verticalPosition, setVerticalPosition] = useState(0.0)
+  const [verticalSpeed, setVerticalSpeed] = useState(5.0)
   const verticalMin = 0
-  const verticalMax = 33
+  const verticalMax = 25
 
-  const [horizontalPos, setHorizontalPos] = useState(60.0)
-  const [horizontalTarget, setHorizontalTarget] = useState(100.0)
-  const [horizontalVelocity, setHorizontalVelocity] = useState(60.0)
+  const [horizontalPos, setHorizontalPos] = useState(0.0)
+  const [horizontalTarget, setHorizontalTarget] = useState(133.0)
+  const [horizontalVelocity, setHorizontalVelocity] = useState(5.0)
   const [horizontalHomed, setHorizontalHomed] = useState(false)
   const [horizontalHomedDimmed, setHorizontalHomedDimmed] = useState(true)
-  const [horizontalPosition, setHorizontalPosition] = useState(100.0)
-  const [horizontalSpeed, setHorizontalSpeed] = useState(1.0)
+  const [horizontalPosition, setHorizontalPosition] = useState(0.0)
+  const [horizontalSpeed, setHorizontalSpeed] = useState(5.0)
   const horizontalMin = 0
   const horizontalMax = 133
 
@@ -53,6 +53,17 @@ export default function ControlPanel() {
   const [error, setError] = useState<string | null>(null)
 
   const [relayStates, setRelayStates] = useState<boolean[]>(Array(8).fill(false))
+  const [peristalticEnabled, setPeristalticEnabled] = useState(false)
+  const [peristalticDirection, setPeristalticDirection] = useState(true)
+  const [peristalticLowSpeed, setPeristalticLowSpeed] = useState(false)
+  const [pidEnabled, setPidEnabled] = useState(false)
+  const [pidSetpoint, setPidSetpoint] = useState(1.0)
+  const [pidHall, setPidHall] = useState<number | null>(null)
+  const [flowMlMin, setFlowMlMin] = useState(0.0)
+  const [totalMl, setTotalMl] = useState(0.0)
+  const [flowRunning, setFlowRunning] = useState(false)
+  const [tempEnabled, setTempEnabled] = useState(false)
+  const [tempReady, setTempReady] = useState<boolean | null>(null)
 
   const toggleRelay = async (index: number) => {
     const desired = !relayStates[index]
@@ -74,6 +85,117 @@ export default function ControlPanel() {
       setError(null)
     } catch (err: any) {
       setError(err?.message || "Relay toggle failed")
+    }
+  }
+
+  const togglePeristalticEnable = async () => {
+    const desired = !peristalticEnabled
+    try {
+      await post("/peristaltic/enable", { enabled: desired })
+      setPeristalticEnabled(desired)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Peristaltic enable failed")
+    }
+  }
+
+  const togglePeristalticDirection = async () => {
+    const desired = !peristalticDirection
+    try {
+      await post("/peristaltic/direction", { forward: desired })
+      setPeristalticDirection(desired)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Peristaltic direction failed")
+    }
+  }
+
+  const togglePeristalticSpeed = async () => {
+    const desired = !peristalticLowSpeed
+    try {
+      await post("/peristaltic/speed", { low_speed: desired })
+      setPeristalticLowSpeed(desired)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Peristaltic speed failed")
+    }
+  }
+
+  const togglePidEnable = async () => {
+    const desired = !pidEnabled
+    try {
+      await post("/pid/enable", { enabled: desired })
+      setPidEnabled(desired)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "PID enable failed")
+    }
+  }
+
+  const applyPidSetpoint = async () => {
+    try {
+      await post("/pid/setpoint", { value: pidSetpoint })
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "PID setpoint failed")
+    }
+  }
+
+  const pidHome = async () => {
+    try {
+      await post("/pid/home")
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "PID home failed")
+    }
+  }
+
+  const pidClose = async () => {
+    try {
+      await post("/pid/close")
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "PID close failed")
+    }
+  }
+
+  const flowStart = async () => {
+    try {
+      await post("/flow/start")
+      setFlowRunning(true)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Flow start failed")
+    }
+  }
+
+  const flowStop = async () => {
+    try {
+      await post("/flow/stop")
+      setFlowRunning(false)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Flow stop failed")
+    }
+  }
+
+  const flowReset = async () => {
+    try {
+      await post("/flow/reset")
+      setTotalMl(0)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Flow reset failed")
+    }
+  }
+
+  const tempToggle = async (enabled: boolean) => {
+    try {
+      await post("/temperature/enable", { enabled })
+      setTempEnabled(enabled)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Temp control failed")
     }
   }
 
@@ -156,6 +278,29 @@ export default function ControlPanel() {
             })
             setRelayStates(arr)
           }
+          setPeristalticEnabled(Boolean((data as any).peristaltic_enabled))
+          setPeristalticDirection(Boolean((data as any).peristaltic_direction_cw))
+          setPeristalticLowSpeed(Boolean((data as any).peristaltic_low_speed))
+          setPidEnabled(Boolean((data as any).pid_enabled))
+          if (typeof (data as any).pid_setpoint === "number") {
+            setPidSetpoint(Number((data as any).pid_setpoint))
+          }
+          setPidHall(
+            typeof (data as any).pid_hall === "number" ? Number((data as any).pid_hall) : null
+          )
+          if (typeof (data as any).flow_ml_min === "number") {
+            setFlowMlMin(Number((data as any).flow_ml_min))
+          }
+          if (typeof (data as any).total_ml === "number") {
+            setTotalMl(Number((data as any).total_ml))
+          }
+          setFlowRunning(Boolean((data as any).flow_running))
+          setTempEnabled(Boolean((data as any).temp_enabled))
+          if (typeof (data as any).temp_ready === "boolean") {
+            setTempReady(Boolean((data as any).temp_ready))
+          } else {
+            setTempReady(null)
+          }
         }
       } catch {
         // Swallow polling errors; UI handles command errors separately.
@@ -174,7 +319,7 @@ export default function ControlPanel() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AxisWidget
           axisId="Z"
-          name="Vertical Axis Device 3"
+          name="Vertical Axis"
           orientation="vertical"
           positionMm={verticalPos}
           minMm={verticalMin}
@@ -189,12 +334,12 @@ export default function ControlPanel() {
             moveAxis("Z", target, verticalSpeed)
           }}
           onPosition2={() => {
-            const target = clamp(15, verticalMin, verticalMax)
+            const target = clamp(12.5, verticalMin, verticalMax)
             setVerticalPos(target)
             moveAxis("Z", target, verticalSpeed)
           }}
           onPosition3={() => {
-            const target = clamp(33, verticalMin, verticalMax)
+            const target = clamp(25, verticalMin, verticalMax)
             setVerticalPos(target)
             moveAxis("Z", target, verticalSpeed)
           }}
@@ -211,11 +356,14 @@ export default function ControlPanel() {
             setVerticalPos(target)
             moveAxis("Z", target, verticalSpeed)
           }}
+          position1Label="Open"
+          position2Label="Mid"
+          position3Label="Close"
         />
 
         <AxisWidget
           axisId="X"
-          name="Horizontal Axis Device 3"
+          name="Horizontal Axis"
           orientation="horizontal"
           positionMm={horizontalPos}
           minMm={horizontalMin}
@@ -225,12 +373,12 @@ export default function ControlPanel() {
           homed={horizontalHomed}
           homedDimmed={horizontalHomedDimmed}
           onPosition1={() => {
-            const target = clamp(26, horizontalMin, horizontalMax)
+            const target = clamp(0, horizontalMin, horizontalMax)
             setHorizontalPos(target)
             moveAxis("X", target, horizontalSpeed)
           }}
           onPosition2={() => {
-            const target = clamp(50, horizontalMin, horizontalMax)
+            const target = clamp(26, horizontalMin, horizontalMax)
             setHorizontalPos(target)
             moveAxis("X", target, horizontalSpeed)
           }}
@@ -252,6 +400,9 @@ export default function ControlPanel() {
             setHorizontalPos(target)
             moveAxis("X", target, horizontalSpeed)
           }}
+          position1Label="Filter In"
+          position2Label="Filter Out"
+          position3Label="Filtering"
         />
       </div>
 
@@ -370,6 +521,173 @@ export default function ControlPanel() {
           </div>
 
           {error && <div className="text-xs text-destructive font-semibold">{error}</div>}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="premium-card p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-foreground">Peristaltic Pump</h2>
+          <p className="text-sm text-muted-foreground">
+            Status:{" "}
+            <span className={peristalticEnabled ? "text-success font-medium" : "text-muted-foreground"}>
+              {peristalticEnabled ? "Enabled" : "Disabled"}
+            </span>
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={togglePeristalticEnable}
+              className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-primary/20"
+            >
+              {peristalticEnabled ? "Pump ON" : "Pump OFF"}
+            </button>
+            <button
+              onClick={togglePeristalticDirection}
+              className="w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg font-medium hover:bg-muted transition-all shadow-md"
+            >
+              Dir: {peristalticDirection ? "CW" : "CCW"}
+            </button>
+            <button
+              onClick={togglePeristalticSpeed}
+              className="w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg font-medium hover:bg-muted transition-all shadow-md"
+            >
+              {peristalticLowSpeed ? "Low Speed" : "High Speed"}
+            </button>
+          </div>
+        </div>
+
+        <div className="premium-card p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-foreground">PID Valve</h2>
+          <p className="text-sm text-muted-foreground">
+            Feedback:{" "}
+            <span className="text-foreground font-semibold">{flowMlMin.toFixed(2)} mL/min</span>
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Hall:{" "}
+            <span className="text-foreground font-semibold">
+              {pidHall === null ? "N/A" : pidHall ? "ON" : "OFF"}
+            </span>
+          </p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-muted-foreground font-medium w-20">Setpoint</label>
+              <input
+                type="number"
+                value={pidSetpoint}
+                onChange={(e) => setPidSetpoint(Number.parseFloat(e.target.value) || 0)}
+                step="0.1"
+                className="w-24 px-3 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+              />
+              <span className="text-sm text-muted-foreground">mL/min</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={togglePidEnable}
+                className={`px-4 py-2.5 rounded-lg font-medium transition-all shadow-md ${
+                  pidEnabled
+                    ? "bg-success text-success-foreground shadow-success/20"
+                    : "bg-secondary text-secondary-foreground hover:bg-muted"
+                }`}
+              >
+                {pidEnabled ? "PID ON" : "Enable PID"}
+              </button>
+              <button
+                onClick={applyPidSetpoint}
+                className="px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-primary/20"
+              >
+                Apply
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={pidHome}
+                className="px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg font-medium hover:bg-muted transition-all shadow-md"
+              >
+                Home
+              </button>
+              <button
+                onClick={pidClose}
+                className="px-4 py-2.5 bg-destructive text-destructive-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-destructive/20"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="premium-card p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-foreground">Temperature Control</h2>
+          <p className="text-sm text-muted-foreground">
+            Ready:{" "}
+            <span
+              className={
+                tempReady === null
+                  ? "text-muted-foreground font-semibold"
+                  : tempReady
+                  ? "text-success font-semibold"
+                  : "text-muted-foreground font-semibold"
+              }
+            >
+              {tempReady === null ? "N/A" : tempReady ? "ON" : "OFF"}
+            </span>
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => tempToggle(true)}
+              className={`px-4 py-2.5 rounded-lg font-medium transition-all shadow-md ${
+                tempEnabled
+                  ? "bg-success text-success-foreground shadow-success/20"
+                  : "bg-secondary text-secondary-foreground hover:bg-muted"
+              }`}
+            >
+              Peltier ON
+            </button>
+            <button
+              onClick={() => tempToggle(false)}
+              className="px-4 py-2.5 bg-destructive text-destructive-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-destructive/20"
+            >
+              Peltier OFF
+            </button>
+          </div>
+        </div>
+
+        <div className="premium-card p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-foreground">Flow Meter</h2>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Flow</span>
+              <span className="text-foreground font-semibold">{flowMlMin.toFixed(2)} mL/min</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Total</span>
+              <span className="text-foreground font-semibold">{totalMl.toFixed(1)} mL</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Reading</span>
+              <span className={flowRunning ? "text-success font-semibold" : "text-muted-foreground"}>
+                {flowRunning ? "ON" : "OFF"}
+              </span>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3 pt-2">
+            <button
+              onClick={flowStart}
+              className="px-4 py-2.5 bg-success text-success-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-success/20"
+            >
+              Start
+            </button>
+            <button
+              onClick={flowStop}
+              className="px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg font-medium hover:bg-muted transition-all shadow-md"
+            >
+              Stop
+            </button>
+            <button
+              onClick={flowReset}
+              className="px-4 py-2.5 bg-destructive text-destructive-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-destructive/20"
+            >
+              Reset
+            </button>
+          </div>
         </div>
       </div>
     </div>

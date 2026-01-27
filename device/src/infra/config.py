@@ -54,16 +54,58 @@ class AxisConfig:
 
 
 @dataclass
+class PeristalticConfig:
+    enable_pin: str = "Q0.0"
+    dir_forward_pin: str = "Q0.1"
+    dir_reverse_pin: str = "Q0.2"
+    speed_pin: str = "Q0.7"
+
+
+@dataclass
+class PidValveConfig:
+    step_pin: str = "Q0.5"
+    dir_pin: str = "Q0.4"
+    en_pin: str = "Q0.3"
+    hall_pin: str = "I0.12"
+    pid_kp: float = 1.6
+    pid_ki: float = 0.25
+    pid_kd: float = 0.02
+    sample_time: float = 0.08
+    output_min: float = -1.5
+    output_max: float = 1.5
+    setpoint_default: float = 1.0
+
+
+@dataclass
+class FlowSensorConfig:
+    port: str = "/dev/ttyUSB0"
+    medium: str = "water"
+    interval_ms: int = 20
+    scale_factor: float = 500.0
+    stale_restart_limit: int = 20
+
+
+@dataclass
+class TemperatureConfig:
+    command_pin: str = "Q0.6"
+    ready_pin: str = "I0.11"
+    ready_gpio_pin: int = 8
+
+
+@dataclass
 class DeviceConfig:
     device_id: str = "device3"
     network: NetworkConfig = field(default_factory=NetworkConfig)
     relay: RelayConfig = field(default_factory=RelayConfig)
-    rotary: RotaryValveConfig = field(default_factory=RotaryValveConfig)
     syringe: SyringeConfig = field(default_factory=SyringeConfig)
     vertical_axis: AxisConfig = field(default_factory=AxisConfig)
     horizontal_axis: AxisConfig = field(
         default_factory=lambda: AxisConfig(address=0x4D, min_mm=0.0, max_mm=None)
     )
+    peristaltic: PeristalticConfig = field(default_factory=PeristalticConfig)
+    pid_valve: PidValveConfig = field(default_factory=PidValveConfig)
+    flow_sensor: FlowSensorConfig = field(default_factory=FlowSensorConfig)
+    temperature: TemperatureConfig = field(default_factory=TemperatureConfig)
 
 
 def _load_yaml(path: str) -> Dict[str, Any]:
@@ -83,8 +125,11 @@ def load_config(path: str) -> DeviceConfig:
         device_id=data.get("device_id", "device3"),
         network=NetworkConfig(**data.get("network", {})),
         relay=RelayConfig(**data.get("relay", {})),
-        rotary=RotaryValveConfig(**data.get("rotary_valve", data.get("rotary", {}))),
         syringe=SyringeConfig(**data.get("syringe", {})),
         vertical_axis=AxisConfig(**data.get("vertical_axis", {})),
         horizontal_axis=AxisConfig(**data.get("horizontal_axis", {})),
+        peristaltic=PeristalticConfig(**data.get("peristaltic", {})),
+        pid_valve=PidValveConfig(**data.get("pid_valve", {})),
+        flow_sensor=FlowSensorConfig(**data.get("flow_sensor", {})),
+        temperature=TemperatureConfig(**data.get("temperature", {})),
     )

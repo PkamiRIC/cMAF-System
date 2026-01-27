@@ -18,6 +18,9 @@ interface AxisWidgetProps {
   onPosition1?: () => void
   onPosition2?: () => void
   onPosition3?: () => void
+  position1Label?: string
+  position2Label?: string
+  position3Label?: string
   onHome?: () => void
   onMove?: () => void
   position: number
@@ -40,6 +43,9 @@ export default function AxisWidget({
   onPosition1,
   onPosition2,
   onPosition3,
+  position1Label,
+  position2Label,
+  position3Label,
   onHome,
   onMove,
   position,
@@ -178,21 +184,21 @@ export default function AxisWidget({
               disabled={!onPosition1}
               className="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-primary/20"
             >
-              Pos 1
+              {position1Label || "Pos 1"}
             </button>
             <button
               onClick={onPosition2}
               disabled={!onPosition2}
               className="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-primary/20"
             >
-              Pos 2
+              {position2Label || "Pos 2"}
             </button>
             <button
               onClick={onPosition3}
               disabled={!onPosition3}
               className="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-primary/20"
             >
-              Pos 3
+              {position3Label || "Pos 3"}
             </button>
           </div>
         </div>

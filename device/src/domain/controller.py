@@ -2,17 +2,38 @@ import threading
 import time
 import asyncio
 import json
+import sys
+from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Callable, Optional
 
-from hardware.plc_io import PlcIo
 from hardware.relay_board import RelayBoard
-from hardware.rotary_valve import RotaryValve
 from hardware.syringe_pump import SyringePump
 from hardware.axis_driver import AxisDriver
+from hardware.peristaltic_pump import PeristalticPump
+from hardware.pid_valve import PidValveController
+from hardware.flow_sensor import FlowSensor
+from hardware.temperature_control import TemperatureController
 from infra.config import DeviceConfig
-from domain.sequence1 import run_maf_sampling_sequence
-from domain.sequence2 import run_sequence2
+
+_OLD_CODES = Path(__file__).resolve().parents[2] / "Old_Codes"
+if str(_OLD_CODES) not in sys.path:
+    sys.path.append(str(_OLD_CODES))
+
+try:
+    from MAF_Sequence_v1 import run_maf_sequence as run_maf_sequence_v1  # type: ignore
+except Exception:
+    run_maf_sequence_v1 = None
+
+try:
+    from MAF_Sequence_2 import run_maf_sequence as run_maf_sequence_v2  # type: ignore
+except Exception:
+    run_maf_sequence_v2 = None
+
+try:
+    from Cleaning_Sequence import run_maf_cleaning_sequence  # type: ignore
+except Exception:
+    run_maf_cleaning_sequence = None
 
 
 @dataclass
@@ -20,13 +41,9 @@ class DeviceState:
     state: str = "IDLE"  # IDLE, RUNNING, ERROR
     current_sequence: Optional[str] = None
     sequence_step: Optional[str] = None
-    pressure_bar: float = 0.0
-    flow_lpm: float = 0.0
-    total_volume_l: float = 0.0
     last_error: Optional[str] = None
     stop_requested: bool = False
     relay_states: dict = field(default_factory=dict)
-    rotary_port: Optional[int] = None
     logs: list = field(default_factory=list)
     syringe_busy: bool = False
     syringe_volume_ml: Optional[float] = None
@@ -36,18 +53,37 @@ class DeviceState:
     x_homed: bool = False
     z_homed: bool = False
     syringe_homed: bool = False
+    peristaltic_enabled: bool = False
+    peristaltic_direction_cw: bool = True
+    peristaltic_low_speed: bool = False
+    pid_enabled: bool = False
+    pid_setpoint: float = 1.0
+    pid_hall: Optional[int] = None
+    flow_ml_min: float = 0.0
+    total_ml: float = 0.0
+    flow_running: bool = False
+    temp_enabled: bool = False
+    temp_ready: Optional[bool] = None
 
 
 class DeviceController:
     def __init__(self, config: DeviceConfig):
         self.config = config
-        self.io = PlcIo()
         self.relays = RelayBoard(config.relay)
-        self.rotary = RotaryValve(config.rotary)
         self.syringe = SyringePump(config.syringe)
         self.vertical_axis = AxisDriver(config.vertical_axis, "Vertical Axis")
         self.horizontal_axis = AxisDriver(config.horizontal_axis, "Horizontal Axis")
+        self.peristaltic = PeristalticPump(config.peristaltic)
+        self.flow_sensor = FlowSensor(config.flow_sensor)
+        self.temperature = TemperatureController(config.temperature)
+        self.pid_valve = PidValveController(config.pid_valve, self._read_flow_for_pid)
         self.state = DeviceState()
+        self.state.peristaltic_enabled = self.peristaltic.state.enabled
+        self.state.peristaltic_direction_cw = self.peristaltic.state.direction_forward
+        self.state.peristaltic_low_speed = self.peristaltic.state.low_speed
+        self.state.pid_enabled = self.pid_valve.state.enabled
+        self.state.pid_setpoint = self.pid_valve.state.setpoint
+        self.state.temp_enabled = self.temperature.state.enabled
         self._stop_event = threading.Event()
         self._sequence_thread: Optional[threading.Thread] = None
         self._state_lock = threading.Lock()
@@ -55,7 +91,7 @@ class DeviceController:
         self._log_buffer: list[str] = []
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._sse_subscribers: list[asyncio.Queue] = []
-        # Serialize all physical motion (axes, syringe, rotary) across threads.
+        # Serialize all physical motion (axes, syringe) across threads.
         self._motion_lock = threading.Lock()
 
         # Hard caps (Position 3) for manual + sequence moves
@@ -64,9 +100,8 @@ class DeviceController:
             "X": self._resolve_axis_limit(config.horizontal_axis.max_mm, 133.0),
         }
 
-        # Relay/rotary caches for UI feedback
+        # Relay caches for UI feedback
         self.relay_states = {ch: False for ch in range(1, 9)}
-        self.rotary_port: Optional[int] = None
 
         # --- Live syringe status polling ---
         self._syringe_poll_stop = threading.Event()
@@ -88,12 +123,20 @@ class DeviceController:
     # ---------------------------------------------------
     def get_status(self) -> dict:
         with self._state_lock:
-            self.state.pressure_bar = self.io.read_pressure()
-            self.state.flow_lpm = self.io.read_flow()
-            self.state.total_volume_l = self.io.read_volume()
+            flow = self.flow_sensor.read()
+            self.state.flow_ml_min = float(flow.get("flow_ml_min", 0.0))
+            self.state.total_ml = float(flow.get("total_ml", 0.0))
+            self.state.flow_running = self.flow_sensor.is_running()
+            self.state.temp_ready = self.temperature.read_ready()
+            self.state.temp_enabled = self.temperature.state.enabled
+            self.state.peristaltic_enabled = self.peristaltic.state.enabled
+            self.state.peristaltic_direction_cw = self.peristaltic.state.direction_forward
+            self.state.peristaltic_low_speed = self.peristaltic.state.low_speed
+            self.state.pid_enabled = self.pid_valve.state.enabled
+            self.state.pid_setpoint = self.pid_valve.state.setpoint
+            self.state.pid_hall = self.pid_valve.state.hall_state
             # update cached UI fields
             self.state.relay_states = dict(self.relay_states)
-            self.state.rotary_port = self.rotary_port
             self.state.logs = list(self._log_buffer)
             snapshot = {"device_id": self.config.device_id, **asdict(self.state)}
         return snapshot
@@ -134,7 +177,24 @@ class DeviceController:
 
     def emergency_stop(self) -> None:
         self.stop_sequence()
-        self.io.emergency_stop()
+        try:
+            self.peristaltic.force_stop()
+        except Exception:
+            pass
+        try:
+            self.pid_valve.set_enabled(False)
+        except Exception:
+            pass
+        try:
+            self.temperature.force_off()
+        except Exception:
+            pass
+        try:
+            self.relays.all_off()
+            for ch in range(1, 9):
+                self.relay_states[ch] = False
+        except Exception:
+            pass
         with self._state_lock:
             self.state.state = "ERROR"
             self.state.current_sequence = None
@@ -145,10 +205,6 @@ class DeviceController:
         self._ensure_manual_allowed()
         self._log(f"[Relay] R{channel} {'ON' if enabled else 'OFF'}")
         return self._set_relay(channel, enabled, allow_when_running=False)
-
-    def set_rotary_port(self, port: int) -> bool:
-        self._ensure_manual_allowed()
-        return self._set_rotary_port(port, allow_when_running=False)
 
     def set_all_relays(self, enabled: bool) -> bool:
         """
@@ -164,6 +220,74 @@ class DeviceController:
                 self.state.relay_states = dict(self.relay_states)
             self._broadcast_status()
         return ok
+
+    def set_peristaltic_enabled(self, enabled: bool) -> None:
+        self._ensure_manual_allowed()
+        self.peristaltic.set_enabled(enabled)
+        with self._state_lock:
+            self.state.peristaltic_enabled = self.peristaltic.state.enabled
+        self._broadcast_status()
+
+    def set_peristaltic_direction(self, forward: bool) -> None:
+        self._ensure_manual_allowed()
+        self.peristaltic.set_direction(forward)
+        with self._state_lock:
+            self.state.peristaltic_direction_cw = self.peristaltic.state.direction_forward
+        self._broadcast_status()
+
+    def set_peristaltic_speed(self, low_speed: bool) -> None:
+        self._ensure_manual_allowed()
+        self.peristaltic.set_speed_checked(low_speed)
+        with self._state_lock:
+            self.state.peristaltic_low_speed = self.peristaltic.state.low_speed
+        self._broadcast_status()
+
+    def set_pid_enabled(self, enabled: bool) -> None:
+        self._ensure_manual_allowed()
+        self.pid_valve.set_enabled(enabled)
+        with self._state_lock:
+            self.state.pid_enabled = self.pid_valve.state.enabled
+        self._broadcast_status()
+
+    def set_pid_setpoint(self, value: float) -> None:
+        self._ensure_manual_allowed()
+        self.pid_valve.set_setpoint(value)
+        with self._state_lock:
+            self.state.pid_setpoint = self.pid_valve.state.setpoint
+        self._broadcast_status()
+
+    def pid_home(self) -> None:
+        self._ensure_manual_allowed()
+        self.pid_valve.homing_routine()
+        self._broadcast_status()
+
+    def pid_close(self) -> None:
+        self._ensure_manual_allowed()
+        self.pid_valve.force_close()
+        self._broadcast_status()
+
+    def set_temp_enabled(self, enabled: bool) -> None:
+        self._ensure_manual_allowed()
+        self.temperature.set_enabled(enabled)
+        with self._state_lock:
+            self.state.temp_enabled = self.temperature.state.enabled
+        self._broadcast_status()
+
+    def flow_start(self) -> None:
+        self.flow_sensor.start()
+        with self._state_lock:
+            self.state.flow_running = self.flow_sensor.is_running()
+        self._broadcast_status()
+
+    def flow_stop(self) -> None:
+        self.flow_sensor.stop()
+        with self._state_lock:
+            self.state.flow_running = self.flow_sensor.is_running()
+        self._broadcast_status()
+
+    def flow_reset(self) -> None:
+        self.flow_sensor.reset_totals()
+        self._broadcast_status()
 
     def move_syringe(self, volume_ml: float, flow_ml_min: float) -> None:
         """
@@ -405,32 +529,84 @@ class DeviceController:
         try:
             relay_adapter = _RelayAdapter(self, self._stop_event)
             syringe_adapter = _SyringeAdapter(self, self._stop_event)
-            if sequence_name.lower() in {"sequence1", "maf_sampling", "maf"}:
+            seq = sequence_name.lower()
+            if seq in {"sequence1", "seq1", "maf", "maf1"}:
+                if run_maf_sequence_v1 is None:
+                    raise RuntimeError("Sequence 1 unavailable (MAF_Sequence_v1 not found)")
                 self._execute_sequence(
-                    lambda: run_maf_sampling_sequence(
+                    lambda: run_maf_sequence_v1(
                         stop_flag=self._stop_event.is_set,
+                        reset_flow_totals=self._flow_reset,
+                        start_flow_meter=self._flow_start,
+                        stop_flow_meter=self._flow_stop,
+                        get_total_volume_ml=self._flow_total_ml,
                         log=self._log,
                         relays=relay_adapter,
+                        motor_pump=self.peristaltic,
+                        pid_controller=self.pid_valve,
+                        home_pid_valve=self._pid_home,
+                        valve1=None,
+                        valve2=None,
                         syringe=syringe_adapter,
+                        enable_temp_controller=self._temp_enable,
+                        disable_temp_controller=self._temp_disable,
+                        wait_for_temp_ready=self._temp_wait_ready,
+                        wait_for_maf_heating=self._maf_wait_for_heating,
                         move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
-                        move_vertical_close_plate=self._move_vertical_preset("close"),
-                        select_rotary_port=lambda p: self._set_rotary_port(p, allow_when_running=True),
-                        before_step=self._before_step,
-                        init=self._home_all_axes,
-                    )
-                )
-            elif sequence_name.lower() in {"sequence2", "seq2"}:
-                self._execute_sequence(
-                    lambda: run_sequence2(
-                        stop_flag=self._stop_event.is_set,
-                        log=self._log,
-                        relays=relay_adapter,
-                        syringe=syringe_adapter,
-                        move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
-                        move_horizontal_home=self._move_horizontal_preset("home"),
+                        move_horizontal_to_waste=self._move_horizontal_preset("filter out"),
+                        move_horizontal_to_home=self._move_horizontal_preset("home"),
                         move_vertical_close_plate=self._move_vertical_preset("close"),
                         move_vertical_open_plate=self._move_vertical_preset("open"),
-                        select_rotary_port=lambda p: self._set_rotary_port(p, allow_when_running=True),
+                        before_step=self._before_step,
+                    )
+                )
+            elif seq in {"sequence2", "seq2", "maf2"}:
+                if run_maf_sequence_v2 is None:
+                    raise RuntimeError("Sequence 2 unavailable (MAF_Sequence_2 not found)")
+                # Work around legacy module name mismatch
+                try:
+                    setattr(sys.modules.get("MAF_Sequence_2"), "reset_flow_totals", self._flow_reset)
+                except Exception:
+                    pass
+                self._execute_sequence(
+                    lambda: run_maf_sequence_v2(
+                        stop_flag=self._stop_event.is_set,
+                        reset_flow_and_timer=self._flow_reset,
+                        get_total_volume_ml=self._flow_total_ml,
+                        log=self._log,
+                        relays=relay_adapter,
+                        motor_pump=self.peristaltic,
+                        pid_controller=self.pid_valve,
+                        valve1=None,
+                        valve2=None,
+                        syringe=syringe_adapter,
+                        enable_temp_controller=self._temp_enable,
+                        disable_temp_controller=self._temp_disable,
+                        wait_for_temp_ready=self._temp_wait_ready,
+                        wait_for_maf_heating=self._maf_wait_for_heating,
+                        move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
+                        move_horizontal_to_waste=self._move_horizontal_preset("filter out"),
+                        move_horizontal_to_home=self._move_horizontal_preset("home"),
+                        move_vertical_close_plate=self._move_vertical_preset("close"),
+                        move_vertical_open_plate=self._move_vertical_preset("open"),
+                        before_step=self._before_step,
+                    )
+                )
+            elif seq in {"cleaning", "clean", "cleaning_sequence"}:
+                if run_maf_cleaning_sequence is None:
+                    raise RuntimeError("Cleaning sequence unavailable (Cleaning_Sequence not found)")
+                self._execute_sequence(
+                    lambda: run_maf_cleaning_sequence(
+                        stop_flag=self._stop_event.is_set,
+                        log=self._log,
+                        relays=relay_adapter,
+                        motor_pump=self.peristaltic,
+                        pid_controller=self.pid_valve,
+                        home_pid_valve=self._pid_home,
+                        move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
+                        move_horizontal_to_home=self._move_horizontal_preset("home"),
+                        move_vertical_close_plate=self._move_vertical_preset("close"),
+                        move_vertical_open_plate=self._move_vertical_preset("open"),
                         before_step=self._before_step,
                     )
                 )
@@ -485,6 +661,51 @@ class DeviceController:
 
         return _fn
 
+    def _read_flow_for_pid(self) -> float:
+        try:
+            return float(self.flow_sensor.read().get("flow_ml_min", 0.0))
+        except Exception:
+            return 0.0
+
+    def _flow_start(self) -> None:
+        self.flow_sensor.start()
+
+    def _flow_stop(self) -> None:
+        self.flow_sensor.stop()
+
+    def _flow_reset(self) -> None:
+        self.flow_sensor.reset_totals()
+
+    def _flow_total_ml(self) -> float:
+        return float(self.flow_sensor.read().get("total_ml", 0.0))
+
+    def _temp_enable(self) -> None:
+        self.temperature.set_enabled(True)
+
+    def _temp_disable(self) -> None:
+        self.temperature.set_enabled(False)
+
+    def _temp_wait_ready(self, timeout: float = 120.0) -> None:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._stop_event.is_set():
+                raise InterruptedError("Sequence canceled")
+            state = self.temperature.read_ready()
+            if state:
+                return
+            time.sleep(0.5)
+        raise RuntimeError("Temperature controller ready timeout")
+
+    def _maf_wait_for_heating(self, duration: float = 10.0) -> None:
+        end = time.time() + max(0.0, duration)
+        while time.time() < end:
+            if self._stop_event.is_set():
+                raise InterruptedError("Sequence canceled")
+            time.sleep(0.5)
+
+    def _pid_home(self) -> None:
+        self.pid_valve.homing_routine()
+
     def _prepare_outputs_for_homing(self) -> None:
         """Best-effort: switch off relays before moving axes."""
         try:
@@ -502,6 +723,28 @@ class DeviceController:
             time.sleep(0.5)  # Allow relays to settle
         except Exception:
             # Keep going even if one relay write fails
+            pass
+        try:
+            self.peristaltic.force_stop()
+            with self._state_lock:
+                self.state.peristaltic_enabled = False
+            self._log("[Peristaltic] Forced OFF before homing")
+        except Exception:
+            pass
+        try:
+            self.pid_valve.set_enabled(False)
+            self.pid_valve.homing_routine()
+            with self._state_lock:
+                self.state.pid_enabled = False
+            self._log("[PID] Disabled + homed before homing sequence")
+        except Exception:
+            pass
+        try:
+            self.temperature.force_off()
+            with self._state_lock:
+                self.state.temp_enabled = False
+            self._log("[Temp] Forced OFF before homing")
+        except Exception:
             pass
 
     def _check_stop(self) -> None:
@@ -524,6 +767,10 @@ class DeviceController:
 
             self._before_step("Homing syringe pump")
             self._check_stop()
+            try:
+                self._set_relay(1, True, allow_when_running=True)
+            except Exception:
+                pass
             with self._motion_lock:
                 self.syringe.home(stop_flag=self._stop_event.is_set)
             self._append_log("Syringe homed")
@@ -531,6 +778,10 @@ class DeviceController:
                 self.state.syringe_homed = True
                 self.state.state = "IDLE"
                 self.state.last_error = None
+            try:
+                self._set_relay(1, False, allow_when_running=True)
+            except Exception:
+                pass
             self._log("[Init] Initialization finished")
         except Exception as exc:
             with self._state_lock:
@@ -601,19 +852,6 @@ class DeviceController:
             self._broadcast_status()
         return ok
 
-    def _set_rotary_port(self, port: int, allow_when_running: bool) -> bool:
-        if self.state.state == "RUNNING" and not allow_when_running:
-            raise RuntimeError("Rotary valve locked while a sequence is running")
-        with self._motion_lock:
-            ok = self.rotary.set_port(port)
-        self._log(f"[Rotary] Set port {port}")
-        if ok:
-            self.rotary_port = port
-            with self._state_lock:
-                self.state.rotary_port = port
-            self._broadcast_status()
-        return ok
-
     def _ensure_manual_allowed(self) -> None:
         if self.state.state == "RUNNING":
             raise RuntimeError("Manual control locked while a sequence is running")
@@ -627,8 +865,8 @@ class DeviceController:
     def _move_horizontal_preset(self, key: str) -> Callable[[], None]:
         presets = {
             "filtering": 133.0,
-            "filter out": 50.0,
-            "filter in": 26.0,
+            "filter out": 26.0,
+            "filter in": 0.0,
             "home": 0.0,
         }
         target = presets.get(key.lower())
@@ -650,7 +888,7 @@ class DeviceController:
     def _move_vertical_preset(self, key: str) -> Callable[[], None]:
         presets = {
             "open": 0.0,
-            "close": 33.0,
+            "close": 25.0,
             "home": 0.0,
         }
         target = presets.get(key.lower())

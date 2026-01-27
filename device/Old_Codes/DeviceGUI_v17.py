@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Compact control GUI for the alternate device sharing MainGUI_v5 aesthetics."""
-
+import faulthandler; faulthandler.enable()
 import importlib.util
 import sys
 import threading
@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import serial
 
+from simple_pid import PID
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt5.QtGui import QDoubleValidator
 from PyQt5.QtWidgets import (
     QApplication,
     QAbstractSpinBox,
@@ -26,11 +28,12 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QPlainTextEdit,
     QCheckBox,
+    QMessageBox,
 )
 
-from rotary_valve import RotaryValve
-from Sequence_1 import run_maf_sampling_sequence
-from Sequence_2 import run_sequence2
+from MAF_Sequence_v1 import run_maf_sequence
+from MAF_Sequence_2 import run_maf_sequence as run_maf_sequence_v2
+from Cleaning_Sequence import run_maf_cleaning_sequence
 
 try:
     import RPi.GPIO as GPIO  # type: ignore
@@ -60,6 +63,7 @@ def _run_with_timeout(func, timeout_s: float) -> bool:
 
 from librpiplc import rpiplc as plc
 from relay_board import RelayBoard06
+from slf3s_usb_sensor import SLF3SUSBFlowSensor
 
 try:
     from Syringe_Class import SyringePump as _SyringePump  # type: ignore
@@ -79,7 +83,7 @@ SyringePump = _SyringePump
 
 # IO / device configuration
 RELAY_PORT = "/dev/ttySC3"
-RELAY_ADDRESS = 0x02    #Check DIP switches for address
+RELAY_ADDRESS = 0x01
 SYRINGE_PORT = "/dev/ttySC3"
 SYRINGE_PUMP_ADDRESS = 0x4C
 SYRINGE_STEPS_PER_ML = 8_000_000
@@ -92,6 +96,10 @@ RELAY_OUTPUTS = [
     (2, "Relay 2"),
     (3, "Relay 3"),
     (4, "Relay 4"),
+    (5, "Relay 5"),
+    (6, "Relay 6"),
+    (7, "Relay 7"),
+    (8, "Relay 8"),
 ]
 RELAY_COMMAND_DELAY = 0.08  # seconds between batch commands
 
@@ -107,7 +115,7 @@ STEPPER_AXES = (
         "extra_buttons": ("Open", "Close"),
         "steps_per_mm": 2000.0,
         "min_mm": 0.0,
-        "max_mm": 33.0,
+        "max_mm": 25.0,
     },
     {
         "name": "Horizontal Axis",
@@ -130,7 +138,7 @@ STEPPER_AXES = (
 AXIS_PRESET_POSITIONS = {
     "Vertical Axis": {
         "open": ("Open", 0.0),
-        "close": ("Close", 33.0),
+        "close": ("Close", 25.0),
     },
     "Horizontal Axis": {
         "filtering": ("Filtering", 133.0),
@@ -145,6 +153,23 @@ AXIS_JOG_STEPS_PER_MM = 2000   # jog distance conversion
 AXIS_SPEED_STEPS_PER_RPM = 5  # steps/s per RPM for jog speed
 SEQUENCE_AXIS_SPEED_RPM = 5.0  # enforced RPM for automated sequences
 HORIZONTAL_AXIS_VERTICAL_LIMIT_MM = 10
+
+PERISTALTIC_PINS = {
+    "enable": "Q0.0",
+    "dir_forward": "Q0.1",
+    "dir_reverse": "Q0.2",
+    "speed": "Q0.7",
+}
+
+FLOW_SENSOR_PORT = "/dev/ttyUSB0"
+FLOW_SENSOR_MEDIUM = "water"
+FLOW_SENSOR_INTERVAL_MS = 20  # match stable CLI test settings
+FLOW_SENSOR_SCALE_FACTOR = 500.0  # datasheet value for SLF3S-1300F
+FLOW_SENSOR_STALE_RESTART_LIMIT = 20  # polls before watchdog restart
+
+TEMP_COMMAND_PIN = "Q0.6"
+TEMP_READY_PIN = "I0.11"       # PLC fallback
+TEMP_READY_GPIO_PIN = 8        # BCM numbering for Pi GPIO
 
 PRIMARY_TOGGLE_STYLE = (
     "QPushButton {background-color: #1d4ed8; color: #f8fafc; font-weight: 600;"
@@ -166,16 +191,6 @@ COMMAND_OFF_ACTIVE_STYLE = (
     "QPushButton {background-color: #dc2626; color: #f8fafc; font-weight: 600;"
     "border: none; border-radius: 8px; padding: 4px 8px;}"
     "QPushButton:pressed {background-color: #b91c1c;}"
-)
-ROTARY_BUTTON_STYLE = (
-    "QPushButton {background-color: #1d4ed8; color: #f8fafc; font-weight: 600;"
-    "border: none; border-radius: 28px;}"
-    "QPushButton:pressed {background-color: #1e40af;}"
-)
-ROTARY_BUTTON_ACTIVE_STYLE = (
-    "QPushButton {background-color: #22c55e; color: #0f172a; font-weight: 700;"
-    "border: none; border-radius: 28px;}"
-    "QPushButton:pressed {background-color: #16a34a;}"
 )
 
 SPIN_STYLE = (
@@ -768,111 +783,226 @@ class RelayToggleButton(QPushButton):
         self._apply_style(desired)
 
 
-class RotaryValvePanel(QWidget):
-    """Simple 6-port rotary valve control panel."""
+class PIDValveController:
+    """Stepper-driven PID valve control."""
 
-    def __init__(
-        self,
-        valve: Optional[RotaryValve] = None,
-        port_count: int = 6,
-    ):
+    def __init__(self, get_flow_func: Callable[[], float]):
+        self._get_flow = get_flow_func
+        self.enabled = False
+        self.setpoint = 1.0
+        self.pid = PID(1.6, 0.25, 0.02, setpoint=self.setpoint)
+        self.pid.sample_time = 0.08
+        self.pid.output_limits = (-1.5, 1.5)
+
+        self.STEP = "Q0.5"
+        self.DIR = "Q0.4"
+        self.EN = "Q0.3"
+        self.HALL = "I0.12"
+
+        for pin in (self.STEP, self.DIR, self.EN):
+            safe_plc_call("pin_mode", plc.pin_mode,pin, plc.OUTPUT)
+        safe_plc_call("pin_mode", plc.pin_mode,self.HALL, plc.INPUT)
+
+        self.hall_led_callback: Optional[Callable[[int], None]] = None
+        self._start_hall_monitor()
+        self._loop_interval = 0.08
+        threading.Thread(target=self._control_loop, daemon=True).start()
+
+    def set_enabled(self, enabled: bool):
+        self.enabled = enabled
+        safe_plc_call("digital_write", plc.digital_write,self.EN, not enabled)
+        emit_ui_log(f"PID valve {'ENABLED' if enabled else 'DISABLED'}")
+
+    def set_setpoint(self, value: float):
+        self.setpoint = value
+        self.pid.setpoint = value
+        emit_ui_log(f"PID setpoint -> {value:.1f} mL/min")
+
+    def _step_valve(self, direction: bool, steps: int = 20):
+        safe_plc_call("digital_write", plc.digital_write,self.DIR, direction)
+        time.sleep(0.001)
+        for _ in range(steps):
+            safe_plc_call("digital_write", plc.digital_write,self.STEP, True)
+            time.sleep(0.00002)
+            safe_plc_call("digital_write", plc.digital_write,self.STEP, False)
+            time.sleep(0.00002)
+
+    def _control_loop(self):
+        while True:
+            if self.enabled:
+                flow = self._get_flow()
+                output = self.pid(flow)
+                steps = int(abs(output) * 8)
+                if steps:
+                    self._step_valve(direction=(output > 0), steps=steps)
+            time.sleep(self._loop_interval)
+
+    def _start_hall_monitor(self):
+        def monitor():
+            while True:
+                # Always treat non-integer reads as logical low (0)
+                val = safe_plc_call("digital_read", plc.digital_read, self.HALL)
+                if not isinstance(val, int):
+                    val = 0
+                if self.hall_led_callback:
+                    try:
+                        self.hall_led_callback(val)
+                    except Exception as exc:
+                        emit_ui_log(f"[PIDValve] hall LED callback error: {exc}")
+                time.sleep(1)
+
+        threading.Thread(target=monitor, daemon=True).start()
+
+    def homing_routine(self):
+        emit_ui_log("Starting PID valve homing")
+        safe_plc_call("digital_write", plc.digital_write,self.EN, False)
+        safe_plc_call("digital_write", plc.digital_write,self.DIR, False)
+        while safe_plc_call("digital_read", plc.digital_read,self.HALL) == 1:
+            safe_plc_call("digital_write", plc.digital_write,self.STEP, True)
+            time.sleep(0.001)
+            safe_plc_call("digital_write", plc.digital_write,self.STEP, False)
+            time.sleep(0.001)
+        safe_plc_call("digital_write", plc.digital_write,self.EN, True)
+        emit_ui_log("PID valve homed")
+
+    def force_close(self, timeout: float = 8.0):
+        """Drive the valve fully closed without relying on the PID loop."""
+        emit_ui_log("PID valve closing to hard stop")
+        safe_plc_call("digital_write", plc.digital_write,self.EN, False)
+        deadline = time.time() + max(timeout, 1.0)
+        while True:
+            val = safe_plc_call("digital_read", plc.digital_read,self.HALL)
+            if isinstance(val, int) and val == 1:
+                break
+            self._step_valve(direction=True, steps=1500)
+            if time.time() > deadline:
+                safe_plc_call("digital_write", plc.digital_write,self.EN, True)
+                raise RuntimeError("PID valve close timed out")
+        safe_plc_call("digital_write", plc.digital_write,self.EN, True)
+        emit_ui_log("PID valve closed")
+
+
+class PIDValvePanel(QWidget):
+    def __init__(self, controller: PIDValveController, read_sensor: Callable[[], float]):
         super().__init__()
-        self.valve = valve or RotaryValve()
-        self.port_count = max(1, min(6, port_count))
-        self._busy = threading.Lock()
-        self._current_port: Optional[int] = None
-        self._buttons: Dict[int, QPushButton] = {}
+        self.controller = controller
+        self.read_sensor = read_sensor
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
 
-        header = QLabel("Rotary Valve")
+        header = QLabel("PID Valve")
         header.setObjectName("panelTitle")
         layout.addWidget(header)
 
-        self.status_label = QLabel("Active Port: --")
-        self.status_label.setStyleSheet("font-weight: 600;")
-        layout.addWidget(self.status_label)
+        self.enable_button = QPushButton("Enable PID")
+        self.enable_button.setCheckable(True)
+        self.enable_button.setCursor(Qt.PointingHandCursor)
+        self.enable_button.setFocusPolicy(Qt.NoFocus)
+        self.enable_button.setStyleSheet(PRIMARY_TOGGLE_STYLE)
+        self.enable_button.setFixedHeight(26)
+        self.enable_button.clicked.connect(self._toggle_pid)
 
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 4, 0, 4)
-        grid.setHorizontalSpacing(4)
-        grid.setVerticalSpacing(4)
-        self.setMinimumHeight(280)
+        self.setpoint_input = QLineEdit(f"{self.controller.setpoint:.1f}")
+        self.setpoint_input.setValidator(QDoubleValidator(1.0, 500.0, 1))
+        self.setpoint_input.setAlignment(Qt.AlignCenter)
+        self.setpoint_input.setPlaceholderText("Setpoint (mL/min)")
+        self.setpoint_input.returnPressed.connect(self._apply_setpoint)
 
-        grid_size = 5
-        for row in range(grid_size):
-            grid.setRowStretch(row, 1)
-        for col in range(grid_size):
-            grid.setColumnStretch(col, 1)
+        self.feedback_label = QLabel("Feedback: -- mL/min")
+        self.feedback_label.setStyleSheet("font-weight: 600; font-size: 16px;")
 
-        circle_positions = [
-            (0, 2),  # top
-            (1, 4),  # upper-right
-            (3, 4),  # lower-right
-            (4, 2),  # bottom
-            (3, 0),  # lower-left
-            (1, 0),  # upper-left
-        ]
+        self.home_button = QPushButton("Home Valve")
+        self.home_button.setCursor(Qt.PointingHandCursor)
+        self.home_button.setFocusPolicy(Qt.NoFocus)
+        self.home_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.home_button.setFixedHeight(26)
+        self.home_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.home_button.clicked.connect(self._home_valve)
 
-        for idx, port in enumerate(range(1, self.port_count + 1)):
-            row, col = circle_positions[idx % len(circle_positions)]
-            button = QPushButton(f"Port {port}")
-            button.setCursor(Qt.PointingHandCursor)
-            button.setFocusPolicy(Qt.NoFocus)
-            button.setFixedSize(56, 56)
-            button.setStyleSheet(ROTARY_BUTTON_STYLE)
-            button.clicked.connect(lambda _, p=port: self._handle_port(p))
-            grid.addWidget(button, row, col)
-            self._buttons[port] = button
+        self.close_button = QPushButton("Close Valve")
+        self.close_button.setCursor(Qt.PointingHandCursor)
+        self.close_button.setFocusPolicy(Qt.NoFocus)
+        self.close_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.close_button.setFixedHeight(26)
+        self.close_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.close_button.clicked.connect(self._close_valve)
 
-        layout.addLayout(grid)
+        form = QGridLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setHorizontalSpacing(4)
+        form.setVerticalSpacing(3)
+        form.addWidget(QLabel("Setpoint"), 0, 0)
+        form.addWidget(self.setpoint_input, 0, 1)
+        form.addWidget(QLabel("Status"), 1, 0)
+        form.addWidget(self.feedback_label, 1, 1)
 
-    def _handle_port(self, port: int):
-        if not (1 <= port <= self.port_count):
-            return
-        if not self._busy.acquire(blocking=False):
-            emit_ui_log(f"[Rotary] Busy, ignoring port {port}")
-            return
-        self._set_status(f"Switching to Port {port}…")
-        threading.Thread(target=self._run_switch, args=(port,), daemon=True).start()
+        layout.addLayout(form)
+        layout.addWidget(self.enable_button)
+        button_row = QHBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(6)
+        button_row.addWidget(self.home_button)
+        button_row.addWidget(self.close_button)
+        layout.addLayout(button_row)
 
-    def _run_switch(self, port: int):
-        ok = False
+        self._telemetry = QTimer(self)
+        self._telemetry.setInterval(1000)
+        self._telemetry.timeout.connect(self._update_feedback)
+        self._telemetry.start()
+
+    def _toggle_pid(self):
+        state = self.enable_button.isChecked()
+        self.controller.set_enabled(state)
+        self._apply_enable_button_state(state)
+
+    def _apply_setpoint(self):
         try:
-            ok = bool(self.valve.set_port(port))
-            if ok:
-                emit_ui_log(f"[Rotary] Port -> {port}")
-            else:
-                emit_ui_log(f"[Rotary] Port {port} not ACKed")
-        except Exception as exc:
-            emit_ui_log(f"[Rotary] Port {port} error: {exc}")
-        finally:
-            self._invoke_ui(lambda: self._apply_switch_result(port, ok))
-            self._busy.release()
+            value = float(self.setpoint_input.text())
+        except ValueError:
+            return
+        self.controller.set_setpoint(value)
 
-    def _apply_switch_result(self, port: int, success: bool):
-        if success:
-            self._current_port = port
-            self._set_status(f"Active Port: {port}")
-        else:
-            status = f"Active Port: {self._current_port}" if self._current_port else "Active Port: --"
-            self._set_status(status)
-        self._update_button_styles()
+    def _update_feedback(self):
+        value = self.read_sensor()
+        self.feedback_label.setText(f"Feedback: {value:.1f} mL/min")
 
-    def _update_button_styles(self):
-        for port, button in self._buttons.items():
-            if self._current_port == port:
-                button.setStyleSheet(ROTARY_BUTTON_ACTIVE_STYLE)
-            else:
-                button.setStyleSheet(ROTARY_BUTTON_STYLE)
+    def force_stop(self):
+        self.controller.set_enabled(False)
+        self._apply_enable_button_state(False)
+        emit_ui_log("PID valve forced OFF")
 
-    def _set_status(self, text: str):
-        self.status_label.setText(text)
+    def _home_valve(self):
+        if self.controller.enabled:
+            self.controller.set_enabled(False)
+            self._apply_enable_button_state(False)
 
-    def _invoke_ui(self, func: Callable[[], None]):
-        QTimer.singleShot(0, func)
+        def _run_home():
+            time.sleep(0.5)
+            self.controller.homing_routine()
+
+        threading.Thread(target=_run_home, daemon=True).start()
+
+    def _close_valve(self):
+        if self.controller.enabled:
+            self.controller.set_enabled(False)
+            self._apply_enable_button_state(False)
+
+        def _run_close():
+            time.sleep(0.5)
+            try:
+                self.controller.force_close()
+            except Exception as exc:
+                emit_ui_log(f"[PIDValve] close error: {exc}")
+
+        threading.Thread(target=_run_close, daemon=True).start()
+
+    def _apply_enable_button_state(self, state: bool):
+        self.enable_button.blockSignals(True)
+        self.enable_button.setChecked(state)
+        self.enable_button.blockSignals(False)
+        self.enable_button.setText("PID ON" if state else "Enable PID")
 
 
 class StepperAxisControl(QWidget):
@@ -1269,6 +1399,34 @@ class StepperAxisControl(QWidget):
         return True
 
 
+class _PeristalticSequenceAdapter:
+    """Bridge the peristaltic panel pins to the MAF sequence motor API."""
+
+    def __init__(self, panel: Optional["PeristalticPumpPanel"]):
+        self.panel = panel
+
+    def _require_panel(self) -> "PeristalticPumpPanel":
+        if not self.panel:
+            raise RuntimeError("Peristaltic pump unavailable")
+        return self.panel
+
+    def set_enabled(self, enabled: bool):
+        panel = self._require_panel()
+        safe_plc_call("digital_write", plc.digital_write,panel.enable_pin, not enabled)
+        emit_ui_log(f"[MAF] Peristaltic pump {'ENABLED' if enabled else 'DISABLED'}")
+
+    def set_direction(self, forward: bool):
+        panel = self._require_panel()
+        safe_plc_call("digital_write", plc.digital_write,panel.dir_forward_pin, forward)
+        safe_plc_call("digital_write", plc.digital_write,panel.dir_reverse_pin, not forward)
+        emit_ui_log(f"[MAF] Pump direction -> {'CW' if forward else 'CCW'}")
+
+    def set_speed_checked(self, checked: bool):
+        panel = self._require_panel()
+        safe_plc_call("digital_write", plc.digital_write,panel.speed_pin, checked)
+        emit_ui_log(f"[MAF] Pump speed -> {'LOW' if checked else 'HIGH'}")
+
+
 class _RelayValveAdapter:
     """Maps relay channels to open/close valves for the MAF sequence."""
 
@@ -1299,53 +1457,131 @@ class _RelayValveAdapter:
         emit_ui_log(f"[MAF] {self.label} -> CLOSED (relay {self.channel} OFF)")
 
 
-class _RelaySequenceAdapter:
-    """Relay shim so sequences reuse MainWindow's ACK/error handling."""
-
-    def __init__(self, setter: Callable[[int, bool], bool]):
-        self._setter = setter
-
-    def _set(self, channel: int, state: bool) -> bool:
-        return self._setter(int(channel), state)
-
-    def on(self, channel: int) -> bool:
-        return self._set(channel, True)
-
-    def off(self, channel: int) -> bool:
-        return self._set(channel, False)
-
-
 class _SyringeSequenceAdapter:
-    """Provides the minimal syringe API expected by automated sequences."""
+    """Placeholder syringe adapter that logs sequence actions."""
 
-    def __init__(self, panel_getter: Callable[[], Optional["SyringeControlPanel"]]):
-        self._panel_getter = panel_getter
+    def __init__(self, panel: Optional["SyringeControlPanel"]):
+        self.panel = panel
 
     def _require_pump(self) -> SyringePump:
-        panel = self._panel_getter()
+        panel = self.panel
         pump = getattr(panel, "_pump", None) if panel else None
         if pump is None:
             raise RuntimeError("Syringe pump unavailable for sequence")
         return pump
 
+    def _log(self, action: str):
+        emit_ui_log(f"[MAF] Syringe {action} (action not yet implemented)")
+
     def goto_absolute(self, target_ml: float, flow_ml_min: float):
         pump = self._require_pump()
-        emit_ui_log(f"[Sequence1] Syringe ensure standstill before move")
         if not wait_standstill(pump, timeout=30, poll=0.2):
-            raise RuntimeError("Syringe not at standstill")
+            raise RuntimeError("Syringe not at standstill before move")
         current_ml = _read_volume_ml(pump)
+        delta = None
         if current_ml is not None:
             delta = float(target_ml) - current_ml
             if abs(delta) < 0.01:
-                emit_ui_log(f"[Sequence1] Syringe already at {target_ml:.3f} mL")
+                emit_ui_log(f"[MAF] Syringe already at {target_ml:.2f} mL")
                 return
-        flow = max(abs(float(flow_ml_min)), 0.1)
-        signed_flow = flow if (current_ml is None or float(target_ml) >= current_ml) else -flow
-        emit_ui_log(f"[Sequence1] Syringe -> {target_ml:.3f} mL @ {abs(signed_flow):.2f} mL/min")
+        flow = max(float(flow_ml_min), 0.1)
+        signed_flow = flow if (delta is None or delta >= 0.0) else -flow
+        emit_ui_log(f"[MAF] Syringe move -> {target_ml:.2f} mL @ {abs(signed_flow):.2f} mL/min")
         pump.move(float(target_ml), signed_flow)
         if not wait_pos_done(pump, timeout=600, poll=0.2):
             raise RuntimeError("Syringe move did not settle")
-        emit_ui_log(f"[Sequence1] Syringe reached {target_ml:.3f} mL")
+        emit_ui_log(f"[MAF] Syringe reached {target_ml:.2f} mL")
+
+    def suck_air(self):
+        self._log("SUCK AIR")
+
+    def inject_air(self):
+        self._log("INJECT AIR")
+
+    def suck_buffer(self):
+        self._log("SUCK BUFFER")
+
+    def inject_buffer(self):
+        self._log("INJECT BUFFER")
+
+
+class PeristalticPumpPanel(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.enable_pin = PERISTALTIC_PINS["enable"]
+        self.dir_forward_pin = PERISTALTIC_PINS["dir_forward"]
+        self.dir_reverse_pin = PERISTALTIC_PINS["dir_reverse"]
+        self.speed_pin = PERISTALTIC_PINS["speed"]
+
+        for pin in (self.enable_pin, self.dir_forward_pin, self.dir_reverse_pin, self.speed_pin):
+            safe_plc_call("pin_mode", plc.pin_mode,pin, plc.OUTPUT)
+            safe_plc_call("digital_write", plc.digital_write,pin, False)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        header = QLabel("Peristaltic Pump")
+        header.setObjectName("panelTitle")
+        layout.addWidget(header)
+
+        self.enable_button = QPushButton("Pump OFF")
+        self.enable_button.setCheckable(True)
+        self.enable_button.setCursor(Qt.PointingHandCursor)
+        self.enable_button.setStyleSheet(PRIMARY_TOGGLE_STYLE)
+        self.enable_button.setFocusPolicy(Qt.NoFocus)
+        self.enable_button.setFixedHeight(34)
+        self.enable_button.clicked.connect(self._toggle_enable)
+
+        self.direction_button = QPushButton("Dir: CW")
+        self.direction_button.setCheckable(True)
+        self.direction_button.setCursor(Qt.PointingHandCursor)
+        self.direction_button.setStyleSheet(PRIMARY_TOGGLE_STYLE)
+        self.direction_button.setFocusPolicy(Qt.NoFocus)
+        self.direction_button.setFixedHeight(34)
+        self.direction_button.clicked.connect(self._toggle_direction)
+
+        self.speed_button = QPushButton("High Speed")
+        self.speed_button.setCheckable(True)
+        self.speed_button.setCursor(Qt.PointingHandCursor)
+        self.speed_button.setStyleSheet(PRIMARY_TOGGLE_STYLE)
+        self.speed_button.setFocusPolicy(Qt.NoFocus)
+        self.speed_button.setFixedHeight(34)
+        self.speed_button.clicked.connect(self._toggle_speed)
+
+        layout.addWidget(self.enable_button)
+        layout.addWidget(self.direction_button)
+        layout.addWidget(self.speed_button)
+
+    def _toggle_enable(self):
+        state = self.enable_button.isChecked()
+        safe_plc_call("digital_write", plc.digital_write,self.enable_pin, not state)
+        self.enable_button.setText("Pump ON" if state else "Pump OFF")
+        emit_ui_log(f"Peristaltic pump {'ENABLED' if state else 'DISABLED'}")
+
+    def _toggle_direction(self):
+        forward = self.direction_button.isChecked()
+        safe_plc_call("digital_write", plc.digital_write,self.dir_forward_pin, forward)
+        safe_plc_call("digital_write", plc.digital_write,self.dir_reverse_pin, not forward)
+        self.direction_button.setText("Dir: CW" if forward else "Dir: CCW")
+        emit_ui_log(f"Pump direction -> {'CW' if forward else 'CCW'}")
+
+    def _toggle_speed(self):
+        slow = self.speed_button.isChecked()
+        safe_plc_call("digital_write", plc.digital_write,self.speed_pin, slow)
+        self.speed_button.setText("Low Speed" if slow else "High Speed")
+        emit_ui_log(f"Pump speed -> {'LOW' if slow else 'HIGH'}")
+
+    def force_stop(self):
+        safe_plc_call("digital_write", plc.digital_write,self.enable_pin, True)
+        safe_plc_call("digital_write", plc.digital_write,self.dir_forward_pin, False)
+        safe_plc_call("digital_write", plc.digital_write,self.dir_reverse_pin, False)
+        self.enable_button.blockSignals(True)
+        self.enable_button.setChecked(False)
+        self.enable_button.blockSignals(False)
+        self.enable_button.setText("Pump OFF")
+        emit_ui_log("Peristaltic pump forced OFF")
 
 
 class SyringeControlPanel(QWidget):
@@ -1454,7 +1690,10 @@ class SyringeControlPanel(QWidget):
             threading.Thread(target=worker, daemon=True).start()
 
     def _invoke_ui(self, func: Callable[[], None]):
-        QTimer.singleShot(0, func)
+        if threading.current_thread() is threading.main_thread():
+            func()
+        else:
+            QTimer.singleShot(0, func)
 
     def _set_status(self, text: str):
         self.status_label.setText(text)
@@ -1570,9 +1809,454 @@ class SyringeControlPanel(QWidget):
             self._set_status_safe("Home reached")
 
 
+class FlowMeterPanel(QWidget):
+    def __init__(self, client):
+        super().__init__()
+        self.client = client
+        self._last_flow_ml_min = 0.0
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 8)
+        layout.setSpacing(4)
+
+        header = QLabel("Flow Meter")
+        header.setObjectName("panelTitle")
+        layout.addWidget(header)
+
+        self.flow_label = QLabel("Flow Rate: -- mL/min")
+        self.total_label = QLabel("Total Volume: -- mL")
+        for lbl in (self.flow_label, self.total_label):
+            lbl.setStyleSheet("font-size: 14px; font-weight: 600;")
+            layout.addWidget(lbl)
+
+        target_container = QHBoxLayout()
+        target_container.setContentsMargins(0, 0, 0, 0)
+        target_container.setSpacing(6)
+        target_label = QLabel("Target Vol.")
+        target_label.setStyleSheet("font-weight: 600;")
+        target_container.addWidget(target_label)
+
+        self.target_volume_spin = QDoubleSpinBox()
+        self.target_volume_spin.setDecimals(1)
+        self.target_volume_spin.setRange(1.0, 2000.0)
+        self.target_volume_spin.setValue(50.0)
+        self.target_volume_spin.setSuffix(" mL")
+        self.target_volume_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self.target_volume_spin.setStyleSheet(SPIN_STYLE)
+        self.target_volume_spin.setFixedWidth(110)
+        target_container.addWidget(self.target_volume_spin)
+
+        layout.addLayout(target_container)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(8)
+        self.start_button = QPushButton("Start")
+        self.start_button.setCursor(Qt.PointingHandCursor)
+        self.start_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.start_button.clicked.connect(self._handle_start)
+        button_row.addWidget(self.start_button)
+
+        self.reset_button = QPushButton("Reset")
+        self.reset_button.setCursor(Qt.PointingHandCursor)
+        self.reset_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.reset_button.clicked.connect(self._handle_reset)
+        button_row.addWidget(self.reset_button)
+
+        self.elapsed_label = QLabel("Elapsed: 00:00")
+        self.elapsed_label.setStyleSheet("font-weight: 600;")
+        button_row.addWidget(self.elapsed_label)
+
+        button_row.addStretch(1)
+        layout.addLayout(button_row)
+
+        self._started = False
+        self._idle_labels()
+        self._elapsed_seconds = 0.0
+        self._elapsed_start_time: Optional[float] = None
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(500)
+        self._elapsed_timer.timeout.connect(self._update_elapsed_label)
+        self._elapsed_timer.start()
+        self._update_elapsed_label()
+        self._set_start_button_state(False)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(250)   # poll every 0.25s like the CLI test
+        self._timer.timeout.connect(self._refresh)
+        self._timer.start()
+        self._refresh()
+
+    def _idle_labels(self) -> None:
+        self.flow_label.setText("Flow Rate: 0.0 mL/min")
+        self.total_label.setText("Total Volume: 0.0 mL")
+        self.flow_label.setToolTip("")
+        self.total_label.setToolTip("")
+        self._last_flow_ml_min = 0.0
+
+    def target_volume_ml(self) -> float:
+        return self.target_volume_spin.value()
+
+    def _handle_start(self):
+        if not self._started:
+            try:
+                self._start_client()
+            except Exception as e:
+                self._log(f"[FlowMeter] start error: {e}")
+                return
+            self._started = True
+            self._reset_elapsed()
+            self._begin_elapsed()
+            self._set_start_button_state(True)
+        else:
+            self._stop_stream()
+            self._started = False
+            self._pause_elapsed()
+            self._set_start_button_state(False)
+
+    def _handle_reset(self):
+        if self._started:
+            self._stop_stream()
+            self._started = False
+        self._reset_elapsed()
+        self._set_start_button_state(False)
+        if hasattr(self.client, "stop"):
+            try:
+                self.client.stop()
+            except Exception as e:
+                self._log(f"[FlowMeter] stop error: {e}")
+        if hasattr(self.client, "reset_totals"):
+            try:
+                self.client.reset_totals()
+            except Exception as e:
+                self._log(f"[FlowMeter] reset_totals error: {e}")
+        self._idle_labels()
+
+    def _start_client(self):
+        if hasattr(self.client, "start"):
+            try:
+                self.client.start()
+            except TypeError:
+                self.client.start(medium="water")
+
+    def _stop_stream(self):
+        if hasattr(self.client, "stop"):
+            try:
+                self.client.stop()
+            except Exception as e:
+                self._log(f"[FlowMeter] stop error: {e}")
+
+    def _refresh(self):
+        """Read the flow meter and update labels. Works with dict or tuple returns."""
+        if not self._started:
+            self._idle_labels()
+            return
+        try:
+            data = self.client.read()
+
+            flow_value_ml_min = 0.0
+            total_value_ml = 0.0
+            temp_c = None
+            flags = None
+
+            if isinstance(data, dict):
+                flow_l_min = self._as_float(data.get("flow_l_min", 0.0))
+                total_l = self._as_float(data.get("total_l", 0.0))
+                flow_ml_min = data.get("flow_ml_min")
+                total_ml = data.get("total_ml")
+                flow_ul_min = data.get("flow_ul_min")
+                total_ul = data.get("total_ul")
+                temp_c = data.get("temp_c", None)
+                flags = data.get("flags", None)
+
+                if flow_ul_min is not None:
+                    flow_value_ml_min = self._as_float(flow_ul_min) / 1000.0
+                elif flow_ml_min is not None:
+                    flow_value_ml_min = self._as_float(flow_ml_min)
+                else:
+                    flow_value_ml_min = flow_l_min * 1000.0
+
+                if total_ul is not None:
+                    total_value_ml = self._as_float(total_ul) / 1000.0
+                elif total_ml is not None:
+                    total_value_ml = self._as_float(total_ml)
+                else:
+                    total_value_ml = total_l * 1000.0
+            else:
+                # Expect tuple: (flow_l_min, total_l, temp_c, flags) from I²C client
+                flow_l_min = self._as_float(data[0])
+                total_l = self._as_float(data[1])
+                temp_c = data[2] if len(data) > 2 else None
+                flags = data[3] if len(data) > 3 else None
+                flow_value_ml_min = flow_l_min * 1000.0
+                total_value_ml = total_l * 1000.0
+
+            self.flow_label.setText(f"Flow Rate: {flow_value_ml_min:.1f} mL/min")
+            self.total_label.setText(f"Total Volume: {total_value_ml:.1f} mL")
+            self._last_flow_ml_min = float(flow_value_ml_min)
+
+            # Put extra info (temp & flags) in a tooltip so we don't change your layout
+            tip = []
+            if temp_c is not None:
+                try:
+                    tip.append(f"Temp: {float(temp_c):.1f} °C")
+                except Exception:
+                    tip.append(f"Temp: {temp_c}")
+            if flags is not None:
+                try:
+                    fval = int(flags)
+                    air = "AIR!" if (fval & 0x0001) else "OK"
+                    hi  = "HI "  if (fval & 0x0002) else ""
+                    sm  = "SM "  if (fval & 0x0020) else ""
+                    tip.append(f"Flags: 0x{fval:04X} {air} {hi}{sm}".strip())
+                except Exception:
+                    tip.append(f"Flags: {flags}")
+            tooltip = " • ".join(tip) if tip else ""
+            self.flow_label.setToolTip(tooltip)
+            self.total_label.setToolTip(tooltip)
+
+        except Exception as e:
+            # Keep UI responsive; show last value and log the error once per tick
+            self._log(f"[FlowMeter] read error: {e}")
+
+    def _begin_elapsed(self):
+        self._elapsed_start_time = time.time()
+
+    def _pause_elapsed(self):
+        if self._elapsed_start_time is not None:
+            self._elapsed_seconds += max(0.0, time.time() - self._elapsed_start_time)
+            self._elapsed_start_time = None
+        self._update_elapsed_label()
+
+    def _reset_elapsed(self):
+        self._elapsed_seconds = 0.0
+        self._elapsed_start_time = None
+        self._update_elapsed_label()
+
+    def _update_elapsed_label(self):
+        total = self._elapsed_seconds
+        if self._elapsed_start_time is not None:
+            total += max(0.0, time.time() - self._elapsed_start_time)
+        minutes = int(total // 60)
+        seconds = int(total % 60)
+        self.elapsed_label.setText(f"Elapsed: {minutes:02d}:{seconds:02d}")
+
+    def _set_start_button_state(self, running: bool):
+        if running:
+            self.start_button.setText("Stop")
+            self.start_button.setStyleSheet(COMMAND_ON_ACTIVE_STYLE)
+        else:
+            self.start_button.setText("Start")
+            self.start_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+
+    def closeEvent(self, event):
+        """Cleanly stop streaming on exit if supported."""
+        try:
+            if hasattr(self.client, "stop"):
+                self.client.stop()
+            if hasattr(self.client, "close"):
+                self.client.close()
+        except Exception as e:
+            self._log(f"[FlowMeter] stop error: {e}")
+        super().closeEvent(event)
+
+    def _log(self, msg: str):
+        # Use your app logger if available; fall back to print
+        try:
+            emit_ui_log(msg)  # type: ignore  # your app's UI logger (if in scope)
+        except Exception:
+            print(msg)
+
+    @staticmethod
+    def _as_float(value, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def last_flow_ml_min(self) -> float:
+        """Return the most recent flow measurement cached by the panel."""
+        return float(self._last_flow_ml_min)
+
+
+class TemperatureControlPanel(QWidget):
+    def __init__(self):
+        super().__init__()
+        self._command_pin_ok = True
+        self._ready_gpio_ok = False
+        self._ready_fallback_ok = True
+        self._signal_state: Optional[bool] = None
+        self._last_ready_state: Optional[bool] = None
+        self._indicator_size = 32
+        try:
+            safe_plc_call("pin_mode", plc.pin_mode,TEMP_COMMAND_PIN, plc.OUTPUT)
+            safe_plc_call("digital_write", plc.digital_write,TEMP_COMMAND_PIN, False)
+        except Exception as exc:
+            self._command_pin_ok = False
+            emit_ui_log(f"[TempCtrl] command pin init failed: {exc}")
+
+        try:
+            safe_plc_call("pin_mode", plc.pin_mode,TEMP_READY_PIN, plc.INPUT)
+        except Exception as exc:
+            self._ready_fallback_ok = False
+            emit_ui_log(f"[TempCtrl] ready pin fallback init failed: {exc}")
+
+        if GPIO is not None:
+            try:
+                if GPIO.getmode() is None:
+                    GPIO.setmode(GPIO.BCM)
+                GPIO.setup(TEMP_READY_GPIO_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+                self._ready_gpio_ok = True
+            except Exception as exc:
+                self._ready_gpio_ok = False
+                emit_ui_log(f"[TempCtrl] GPIO ready setup failed: {exc}")
+        else:
+            emit_ui_log("[TempCtrl] RPi.GPIO unavailable; using PLC ready fallback")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 8)
+        layout.setSpacing(6)
+
+        header = QLabel("Temperature Control")
+        header.setObjectName("panelTitle")
+        layout.addWidget(header)
+
+        self.status_label = QLabel("Ready Signal: --")
+        self.status_label.setStyleSheet("font-weight: 600;")
+        layout.addWidget(self.status_label)
+
+        signal_row = QHBoxLayout()
+        signal_row.setContentsMargins(0, 0, 0, 0)
+        signal_row.setSpacing(8)
+
+        self.signal_on_button = QPushButton("Peltier ON")
+        self.signal_on_button.setCursor(Qt.PointingHandCursor)
+        self.signal_on_button.setFocusPolicy(Qt.NoFocus)
+        self.signal_on_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.signal_on_button.setFixedHeight(30)
+        self.signal_on_button.clicked.connect(self._handle_command_on)
+        signal_row.addWidget(self.signal_on_button, 1)
+
+        self.signal_off_button = QPushButton("Peltier OFF")
+        self.signal_off_button.setCursor(Qt.PointingHandCursor)
+        self.signal_off_button.setFocusPolicy(Qt.NoFocus)
+        self.signal_off_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.signal_off_button.setFixedHeight(30)
+        self.signal_off_button.clicked.connect(self._handle_command_off)
+        signal_row.addWidget(self.signal_off_button, 1)
+
+        self.signal_indicator = QFrame()
+        self.signal_indicator.setFixedSize(self._indicator_size, self._indicator_size)
+        self._set_signal_indicator(False)
+        signal_row.addWidget(self.signal_indicator)
+
+        layout.addLayout(signal_row)
+
+        self._poll = QTimer(self)
+        self._poll.setInterval(500)
+        self._poll.timeout.connect(self._update_status)
+        self._poll.start()
+        self._update_status()
+        self._command_state: Optional[bool] = None
+        self._update_command_buttons()
+
+    def _update_status(self):
+        ready_state = self._read_ready_state()
+        if ready_state is None:
+            self.status_label.setText("Ready Signal: N/A")
+            self.status_label.setStyleSheet("color: #f97316; font-weight: 600;")
+        else:
+            self.status_label.setText(f"Ready Signal: {'ON' if ready_state else 'OFF'}")
+            color = "#22c55e" if ready_state else "#94a3b8"
+            self.status_label.setStyleSheet(f"color: {color}; font-weight: 600;")
+        if ready_state and self._last_ready_state is not True:
+            emit_ui_log("Target Temperature Reached")
+        self._last_ready_state = ready_state
+        self._set_signal_indicator(ready_state)
+
+    def _handle_command_on(self):
+        self._set_command_state(True)
+
+    def _handle_command_off(self):
+        self._set_command_state(False)
+
+    def _set_command_state(self, state: bool):
+        if not self._command_pin_ok:
+            emit_ui_log("[TempCtrl] command pin unavailable")
+            self._update_command_buttons()
+            return
+        if state == self._command_state:
+            self._update_command_buttons()
+            return
+        try:
+            safe_plc_call("digital_write", plc.digital_write,TEMP_COMMAND_PIN, state)
+            self._command_state = state
+            emit_ui_log(f"Temp control command -> {'ON' if state else 'OFF'}")
+        except Exception as exc:
+            emit_ui_log(f"[TempCtrl] command write failed: {exc}")
+            return
+        self._update_command_buttons()
+
+    def _update_command_buttons(self):
+        if hasattr(self, "signal_on_button") and hasattr(self, "signal_off_button"):
+            if not self._command_pin_ok:
+                self.signal_on_button.setEnabled(False)
+                self.signal_off_button.setEnabled(False)
+                self.signal_on_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+                self.signal_off_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+            else:
+                self.signal_on_button.setEnabled(True)
+                self.signal_off_button.setEnabled(True)
+                if self._command_state is True:
+                    self.signal_on_button.setStyleSheet(COMMAND_ON_ACTIVE_STYLE)
+                    self.signal_off_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+                elif self._command_state is False:
+                    self.signal_on_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+                    self.signal_off_button.setStyleSheet(COMMAND_OFF_ACTIVE_STYLE)
+                else:
+                    self.signal_on_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+                    self.signal_off_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+
+    def force_stop(self):
+        """Force the temperature command output low."""
+        if self._command_pin_ok:
+            self._set_command_state(False)
+        else:
+            self._command_state = False
+            self._update_command_buttons()
+
+    def _read_ready_state(self) -> Optional[bool]:
+        if self._ready_gpio_ok and GPIO is not None:
+            try:
+                return bool(GPIO.input(TEMP_READY_GPIO_PIN))
+            except Exception as exc:
+                self._ready_gpio_ok = False
+                emit_ui_log(f"[TempCtrl] GPIO ready read failed: {exc}")
+        if self._ready_fallback_ok:
+            try:
+                return safe_plc_call("digital_read", plc.digital_read,TEMP_READY_PIN)
+            except Exception as exc:
+                self._ready_fallback_ok = False
+                emit_ui_log(f"[TempCtrl] PLC ready read failed: {exc}")
+        return None
+
+    def _set_signal_indicator(self, state: Optional[bool]):
+        self._signal_state = state
+        if state is None:
+            color = "#64748b"
+            tooltip = "Temperature ready signal: unavailable"
+        else:
+            color = "#22c55e" if state else "#475569"
+            tooltip = f"Temperature ready signal: {'ON' if state else 'OFF'}"
+        self.signal_indicator.setStyleSheet(
+            f"background-color: {color}; border: 1px solid #0f172a; border-radius: {self._indicator_size // 2}px;"
+        )
+        self.signal_indicator.setToolTip(tooltip)
+
+
 class MainWindow(QWidget):
     log_signal = pyqtSignal(str)
     init_state_signal = pyqtSignal(bool)
+    sequence_prompt_signal = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -1583,34 +2267,53 @@ class MainWindow(QWidget):
         plc.init("RPIPLC_V6", "RPIPLC_38AR")
 
         self.log_view: Optional[QPlainTextEdit] = None
-        self.rotary_panel: Optional[RotaryValvePanel] = None
+        self.pid_panel: Optional[PIDValvePanel] = None
+        self.peristaltic_panel: Optional[PeristalticPumpPanel] = None
         self.axis_controls: List[StepperAxisControl] = []
+        self._peristaltic_sequence_adapter: Optional[_PeristalticSequenceAdapter] = None
+        self._syringe_sequence_adapter: Optional[_SyringeSequenceAdapter] = None
+        self._valve1_adapter: Optional[_RelayValveAdapter] = None
+        self._valve2_adapter: Optional[_RelayValveAdapter] = None
         self._horizontal_lock_active = False
         self._horizontal_lock_message = ""
         self._horizontal_lock_timer = QTimer(self)
         self._horizontal_lock_timer.setInterval(1000)
         self._horizontal_lock_timer.timeout.connect(self._horizontal_lock_watchdog)
         self._horizontal_lock_timer.start()
-       
+        # SLF3S USB flow sensor on SCC1-USB cable
+        self.flow_meter = SLF3SUSBFlowSensor(
+            port=FLOW_SENSOR_PORT,
+            medium=FLOW_SENSOR_MEDIUM,
+            interval_ms=FLOW_SENSOR_INTERVAL_MS,
+            scale_factor=FLOW_SENSOR_SCALE_FACTOR,
+            stale_restart_limit=FLOW_SENSOR_STALE_RESTART_LIMIT,
+            auto_start=False,
+        )
         self.syringe_panel: Optional[SyringeControlPanel] = None
         self._init_running = False
         self._init_abort = threading.Event()
         self._stop_event = threading.Event()
-        self._sequence1_running = False
-        self._sequence2_running = False
-        self._syringe_sequence_adapter: Optional[_SyringeSequenceAdapter] = None
+        self._sequence_lock = threading.Lock()
+        self._sequence_thread: Optional[threading.Thread] = None
+        self._sequence_name: Optional[str] = None
+        self._sequence_cancel: Optional[Callable[[], None]] = None
+        self.sequence1_button: Optional[QPushButton] = None
+        self.sequence2_button: Optional[QPushButton] = None
+        self.cleaning_button: Optional[QPushButton] = None
 
         register_ui_logger(self._append_log)
         self.log_signal.connect(self._write_log_entry)
         self.init_state_signal.connect(self._apply_init_state)
+        # self.sequence_prompt_signal.connect(self._show_sequence_prompt_dialog)
         self._tasks = TaskManager(self._append_log)
+        self._sequence_prompt_event = threading.Event()
+        self._sequence_prompt_title = "Sequence Step"
+        self.sequence_prompt_signal.connect(self._show_sequence_prompt_dialog)
 
+        self.pid_controller = PIDValveController(self._read_pid_feedback)
         self.relays: Optional[RelayBoard06] = None
         self.relay_states: Dict[int, bool] = {channel: False for channel, _ in RELAY_OUTPUTS}
         self.relay_buttons: Dict[int, RelayToggleButton] = {}
-        self._relay_sequence_adapter = _RelaySequenceAdapter(
-            lambda channel, state: self._set_relay_state(channel, state)
-        )
 
         self.setStyleSheet(
             """
@@ -1663,17 +2366,21 @@ class MainWindow(QWidget):
 
         # Left panel
         left_panel, left_layout = self._build_panel()
-        self.rotary_panel = RotaryValvePanel()
-        left_layout.addWidget(self.rotary_panel)
-        left_layout.addStretch()
-        left_layout.addSpacing(6)
+        self.pid_panel = PIDValvePanel(self.pid_controller, self._read_pid_feedback)
+        left_layout.addWidget(self.pid_panel)
+        left_layout.addSpacing(4)
         relays_label = QLabel("Relays")
         relays_label.setObjectName("panelTitle")
         left_layout.addWidget(relays_label)
-        relay_panel, relay_controls = self._build_valve_section(None, RELAY_OUTPUTS, size=58)
+        relay_panel, relay_controls = self._build_valve_section(None, RELAY_OUTPUTS, size=42)
         left_layout.addWidget(relay_panel)
         left_layout.addSpacing(6)
         left_layout.addLayout(relay_controls)
+        left_layout.addSpacing(18)
+        left_layout.addStretch()
+        self.peristaltic_panel = PeristalticPumpPanel()
+        self._peristaltic_sequence_adapter = _PeristalticSequenceAdapter(self.peristaltic_panel)
+        left_layout.addWidget(self.peristaltic_panel)
         content.addWidget(left_panel, 1)
 
         # Middle panel (Stepper axes)
@@ -1703,7 +2410,7 @@ class MainWindow(QWidget):
             motion_layout.addWidget(widget)
         motion_layout.addStretch()
         self.syringe_panel = SyringeControlPanel(task_runner=self._tasks)
-        self._syringe_sequence_adapter = _SyringeSequenceAdapter(lambda: self.syringe_panel)
+        self._syringe_sequence_adapter = _SyringeSequenceAdapter(self.syringe_panel)
         motion_layout.addWidget(self.syringe_panel)
         content.addWidget(motion_panel, 1)
         self._configure_horizontal_axis_interlock()
@@ -1712,24 +2419,38 @@ class MainWindow(QWidget):
 
         # Right panel (Flow, Temp, Log, Stop)
         right_panel, right_layout = self._build_panel()
-      
+        self.flow_panel = FlowMeterPanel(self.flow_meter)
+        right_layout.addWidget(self.flow_panel)
+        right_layout.addSpacing(8)
+        self.temperature_panel = TemperatureControlPanel()
+        right_layout.addWidget(self.temperature_panel)
+        right_layout.addSpacing(12)
+
         sequence_row = QHBoxLayout()
         sequence_row.setContentsMargins(0, 0, 0, 0)
         sequence_row.setSpacing(8)
         self.sequence1_button = QPushButton("Sequence 1")
         self.sequence2_button = QPushButton("Sequence 2")
-        for button in (self.sequence1_button, self.sequence2_button):
+        for button, label in (
+            (self.sequence1_button, "Sequence1"),
+            (self.sequence2_button, "Sequence 2"),
+        ):
             button.setCursor(Qt.PointingHandCursor)
             button.setFocusPolicy(Qt.NoFocus)
             button.setStyleSheet(PRIMARY_BUTTON_STYLE)
             button.setFixedHeight(32)
+            button.clicked.connect(
+                lambda _, name=label: self._handle_sequence_placeholder(name)
+            )
             sequence_row.addWidget(button)
-        if self.sequence1_button:
-            self.sequence1_button.clicked.connect(lambda _=False: self._start_sequence1())
-        if self.sequence2_button:
-            self.sequence2_button.clicked.connect(self._start_sequence2)
-
         right_layout.addLayout(sequence_row)
+        self.cleaning_button = QPushButton("Cleaning Sequence")
+        self.cleaning_button.setCursor(Qt.PointingHandCursor)
+        self.cleaning_button.setFocusPolicy(Qt.NoFocus)
+        self.cleaning_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.cleaning_button.setFixedHeight(32)
+        self.cleaning_button.clicked.connect(self._start_cleaning_sequence)
+        right_layout.addWidget(self.cleaning_button)
 
         log_title = QLabel("Event Log")
         log_title.setObjectName("panelTitle")
@@ -1796,17 +2517,29 @@ class MainWindow(QWidget):
             emit_ui_log(f"[STOP] {label} error: {exc}")
 
     def _invoke_ui(self, func: Callable[[], None]):
-        QTimer.singleShot(0, func)
+        if threading.current_thread() is threading.main_thread():
+            func()
+        else:
+            QTimer.singleShot(0, func)
 
     def _emergency_stop(self):
         emit_ui_log("EMERGENCY STOP triggered")
         self._init_abort.set()
         self._stop_event.set()
+        self._stop_active_sequence()
+        if self.pid_panel:
+            self._safe_stop("PID panel", self.pid_panel.force_stop)
+        if self.peristaltic_panel:
+            self._safe_stop("Peristaltic pump", self.peristaltic_panel.force_stop)
         if self.syringe_panel:
             self._safe_stop("Syringe", self.syringe_panel.force_stop)
         for axis in self.axis_controls:
             self._safe_stop(axis.name, lambda ax=axis: ax.force_stop(quiet=True))
         self._safe_stop("Relays", lambda: self._relays_all_off(auto=True))
+        if self.temperature_panel:
+            self._safe_stop("Temperature controller", self.temperature_panel.force_stop)
+        if getattr(self, "pid_controller", None):
+            self._home_pid_valve_async()
         if self._init_running:
             self._init_running = False
             self._set_init_enabled(True)
@@ -1825,239 +2558,455 @@ class MainWindow(QWidget):
             self._set_init_enabled(True)
 
     def _handle_sequence_placeholder(self, label: str):
-        emit_ui_log(f"[{label}] sequence controls are disabled in this build")
-
-    def _update_sequence_buttons(self):
-        busy = self._sequence1_running or self._sequence2_running
-        if self.sequence1_button:
-            self.sequence1_button.setEnabled(not busy)
-        if self.sequence2_button:
-            self.sequence2_button.setEnabled(not busy)
-
-
-    def _start_sequence1(self):
-        if self._sequence1_running:
-            emit_ui_log("[Sequence1] already running")
+        """Sequence button handler with MAF integration on Sequence 1."""
+        if label == "Sequence1":
+            self._start_maf_sequence()
             return
-        emit_ui_log("Sequence 1 begin")
-        try:
-            self._ensure_sequence1_ready()
-        except Exception as exc:
-            emit_ui_log(f"[Sequence1] unavailable: {exc}")
+        if label == "Sequence 2":
+            self._start_maf_sequence_v2()
             return
-        if not self._tasks.submit("Sequence1", self._run_sequence1):
-            emit_ui_log("[Sequence1] worker already active")
-            return
-        emit_ui_log("[Sequence1] Starting background worker")
+        emit_ui_log(f"[{label}] sequence placeholder pressed (no action yet)")
+
+    def _register_sequence_runner(
+        self,
+        name: str,
+        thread: threading.Thread,
+        cancel_callback: Optional[Callable[[], None]] = None,
+    ):
+        with self._sequence_lock:
+            self._sequence_thread = thread
+            self._sequence_name = name
+            self._sequence_cancel = cancel_callback
         self._stop_event.clear()
-        self._sequence1_running = True
-        self._update_sequence_buttons()
 
-    def _run_sequence1(self):
+    def _stop_active_sequence(self):
+        with self._sequence_lock:
+            thread = self._sequence_thread
+            cancel_cb = self._sequence_cancel
+            name = self._sequence_name
+        if not thread:
+            return
+        emit_ui_log(f"[STOP] Canceling sequence {name or '(unnamed)'}")
+        self._stop_event.set()
+        if cancel_cb:
+            try:
+                cancel_cb()
+            except Exception as exc:
+                emit_ui_log(f"[STOP] Sequence cancel callback error: {exc}")
+
+        def _join_sequence():
+            try:
+                thread.join(timeout=2.0)
+            except Exception as exc:
+                emit_ui_log(f"[STOP] Sequence join error: {exc}")
+            finally:
+                with self._sequence_lock:
+                    self._sequence_thread = None
+                    self._sequence_cancel = None
+                    self._sequence_name = None
+
+        threading.Thread(target=_join_sequence, daemon=True).start()
+
+    # ----- Sequence 1 / MAF integration -----
+
+    def _start_maf_sequence(self):
+        with self._sequence_lock:
+            if self._sequence_thread and self._sequence_thread.is_alive():
+                emit_ui_log("[MAF] Sequence already running")
+                return
+        emit_ui_log("Sequence 1 begin")
+
+        # <<< NEW: start flow meter from GUI thread >>>
+        self._maf_start_flow_meter_ui()
+
+        self._sequence_prompt_title = "Sequence 1 Step"
+        thread = threading.Thread(target=self._run_maf_sequence, daemon=True)
+        self._register_sequence_runner("MAF Sequence", thread, cancel_callback=self._cancel_maf_sequence)
+        thread.start()
+
+    def _cancel_maf_sequence(self):
+        emit_ui_log("[MAF] Cancel requested")
+        self._stop_event.set()
+
+    def _run_maf_sequence(self):
         try:
-            syringe_adapter = self._syringe_sequence_adapter
-            relay_adapter = self._relay_sequence_adapter
-            if syringe_adapter is None:
-                raise RuntimeError("Syringe adapter unavailable")
-            if relay_adapter is None:
-                raise RuntimeError("Relay adapter unavailable")
-            run_maf_sampling_sequence(
+            self._run_sequence_initialization("MAF")
+            run_maf_sequence(
                 stop_flag=lambda: self._stop_event.is_set(),
+                reset_flow_totals=self._maf_reset_flow_totals,
+                start_flow_meter=self._maf_start_flow_meter,
+                stop_flow_meter=self._maf_stop_flow_meter,
+                get_total_volume_ml=self._maf_get_total_volume_ml,
                 log=emit_ui_log,
-                relays=relay_adapter,
-                syringe=syringe_adapter,
-                move_horizontal_to_filtering=lambda: self._sequence_move_axis(
+                relays=self.relays,
+                motor_pump=self._peristaltic_sequence_adapter,
+                pid_controller=self.pid_controller,
+                home_pid_valve=self._home_pid_valve_blocking,
+                valve1=self._valve1_adapter,
+                valve2=self._valve2_adapter,
+                syringe=self._syringe_sequence_adapter or _SyringeSequenceAdapter(self.syringe_panel),
+                enable_temp_controller=self._maf_enable_temp_controller,
+                disable_temp_controller=self._maf_disable_temp_controller,
+                wait_for_temp_ready=self._maf_wait_for_temp_ready,
+                wait_for_maf_heating=self._maf_wait_for_maf_heating,
+                move_horizontal_to_filtering=lambda: self._maf_move_axis_to_preset(
                     "Horizontal Axis", "filtering"
                 ),
-                move_vertical_close_plate=lambda: self._sequence_move_axis(
+                move_horizontal_to_waste=lambda: self._maf_move_axis_to_preset(
+                    "Horizontal Axis", "filter out"
+                ),
+                move_horizontal_to_home=lambda: self._maf_move_axis_to_preset(
+                    "Horizontal Axis", "filter in"
+                ),
+                move_vertical_close_plate=lambda: self._maf_move_axis_to_preset(
                     "Vertical Axis", "close"
                 ),
-                select_rotary_port=self._sequence_select_rotary_port,
-                init=self._sequence_full_init,
+                move_vertical_open_plate=lambda: self._maf_move_axis_to_preset(
+                    "Vertical Axis", "open"
+                ),
+                target_volume_ml=self.flow_panel.target_volume_ml() if self.flow_panel else 50.0,
+                post_volume_wait_s=2.0,
+                # before_step=self._maf_prompt_user_before_step,
             )
             emit_ui_log("Sequence 1 complete")
         except Exception as exc:
-            emit_ui_log(f"[Sequence1] error: {exc}")
+            emit_ui_log(f"[MAF] Sequence error: {exc}")
         finally:
             self._stop_event.clear()
-            self._sequence1_running = False
-            self._invoke_ui(self._update_sequence_buttons)
-    
-    def _start_sequence2(self):
-        if self._sequence2_running:
-            emit_ui_log("[Sequence2] already running")
-            return
-        if self._sequence1_running:
-            emit_ui_log("[Sequence2] cannot start: Sequence 1 is running")
-            return
+            with self._sequence_lock:
+                self._sequence_thread = None
+                self._sequence_cancel = None
+                self._sequence_name = None
+            self._sequence_prompt_title = "Sequence Step"
 
+    # ----- Sequence 2 / Alternate MAF integration -----
+
+    def _start_maf_sequence_v2(self):
+        with self._sequence_lock:
+            if self._sequence_thread and self._sequence_thread.is_alive():
+                emit_ui_log("[MAF2] Sequence already running")
+                return
         emit_ui_log("Sequence 2 begin")
-        try:
-            # Same prereqs as Sequence 1 are fine
-            self._ensure_sequence1_ready()
-        except Exception as exc:
-            emit_ui_log(f"[Sequence2] unavailable: {exc}")
+
+        # <<< NEW: start flow meter from GUI thread >>>
+        self._maf_start_flow_meter_ui()
+
+        self._sequence_prompt_title = "Sequence 2 Step"
+        thread = threading.Thread(target=self._run_maf_sequence_v2, daemon=True)
+        self._register_sequence_runner(
+            "MAF Sequence 2",
+            thread,
+            cancel_callback=self._cancel_maf_sequence_v2,
+        )
+        thread.start()
+
+    def _cancel_maf_sequence_v2(self):
+        emit_ui_log("[MAF2] Cancel requested")
+        self._stop_event.set()
+
+    def _maf_start_flow_meter_ui(self):
+        """Reset + start the flow meter safely from the GUI thread."""
+        if not self.flow_panel:
             return
 
-        if not self._tasks.submit("Sequence2", self._run_sequence2):
-            emit_ui_log("[Sequence2] worker already active")
-            return
+        def _do():
+            try:
+                # Full reset of UI and underlying client
+                self.flow_panel._handle_reset()
+                # Only start if not already running
+                if not self.flow_panel._started:
+                    self.flow_panel._handle_start()
+            except Exception as exc:
+                emit_ui_log(f"[MAF] Flow meter UI start failed: {exc}")
 
-        emit_ui_log("[Sequence2] Starting background worker")
-        self._stop_event.clear()
-        self._sequence2_running = True
-        self._update_sequence_buttons()
+        # We are usually on the GUI thread when sequences are started,
+        # but be defensive:
+        if threading.current_thread() is threading.main_thread():
+            _do()
+        else:
+            self._invoke_ui(_do)
 
-    def _run_sequence2(self):
+    def _run_maf_sequence_v2(self):
         try:
-            syringe_adapter = self._syringe_sequence_adapter
-            relay_adapter = self._relay_sequence_adapter
-            if syringe_adapter is None:
-                raise RuntimeError("Syringe adapter unavailable")
-            if relay_adapter is None:
-                raise RuntimeError("Relay adapter unavailable")
-
-            run_sequence2(
+            self._run_sequence_initialization("MAF2")
+            run_maf_sequence_v2(
                 stop_flag=lambda: self._stop_event.is_set(),
+                reset_flow_and_timer=self._maf_reset_flow_readings,
+                get_total_volume_ml=self._maf_get_total_volume_ml,
                 log=emit_ui_log,
-                relays=relay_adapter,
-                syringe=syringe_adapter,
-                move_horizontal_to_filtering=lambda: self._sequence_move_axis(
+                relays=self.relays,
+                motor_pump=self._peristaltic_sequence_adapter,
+                pid_controller=self.pid_controller,
+                valve1=self._valve1_adapter,
+                valve2=self._valve2_adapter,
+                syringe=self._syringe_sequence_adapter or _SyringeSequenceAdapter(self.syringe_panel),
+                enable_temp_controller=self._maf_enable_temp_controller,
+                disable_temp_controller=self._maf_disable_temp_controller,
+                wait_for_temp_ready=self._maf_wait_for_temp_ready,
+                wait_for_maf_heating=self._maf_wait_for_maf_heating,
+                move_horizontal_to_filtering=lambda: self._maf_move_axis_to_preset(
                     "Horizontal Axis", "filtering"
                 ),
-                # Home = back to 0 mm / "filter in"
-                move_horizontal_home=lambda: self._sequence_move_axis(
+                move_horizontal_to_waste=lambda: self._maf_move_axis_to_preset(
+                    "Horizontal Axis", "filter out"
+                ),
+                move_horizontal_to_home=lambda: self._maf_move_axis_to_preset(
                     "Horizontal Axis", "filter in"
                 ),
-                move_vertical_close_plate=lambda: self._sequence_move_axis(
+                move_vertical_close_plate=lambda: self._maf_move_axis_to_preset(
                     "Vertical Axis", "close"
                 ),
-                move_vertical_open_plate=lambda: self._sequence_move_axis(
+                move_vertical_open_plate=lambda: self._maf_move_axis_to_preset(
                     "Vertical Axis", "open"
                 ),
-                select_rotary_port=self._sequence_select_rotary_port,
+                target_volume_ml=self.flow_panel.target_volume_ml() if self.flow_panel else 50.0,
+                post_volume_wait_s=2.0,
+                # before_step=self._maf_prompt_user_before_step,
             )
             emit_ui_log("Sequence 2 complete")
         except Exception as exc:
-            emit_ui_log(f"[Sequence2] error: {exc}")
+            emit_ui_log(f"[MAF2] Sequence error: {exc}")
         finally:
             self._stop_event.clear()
-            self._sequence2_running = False
-            self._invoke_ui(self._update_sequence_buttons)
+            with self._sequence_lock:
+                self._sequence_thread = None
+            self._sequence_cancel = None
+            self._sequence_name = None
+        self._sequence_prompt_title = "Sequence Step"
 
-    def _sequence_full_init(self):
-        emit_ui_log("[Sequence1] Full initialization start")
-        self._sequence1_init()
-        if self.relays:
-            emit_ui_log("[Sequence1] Ensuring all relays are OFF")
-            self._relays_all_off(auto=True)
-        axis_order = ("Vertical Axis", "Horizontal Axis")
-        for axis_name in axis_order:
-            ctrl = self._get_axis_control(axis_name)
-            if ctrl is None or not ctrl.driver.ready:
-                raise RuntimeError(f"{axis_name} unavailable for homing")
-            emit_ui_log(f"[Sequence1] Homing {axis_name}")
-            try:
-                busy = ctrl.driver.is_busy()
-            except Exception:
-                busy = None
-            if busy:
-                emit_ui_log(f"[Sequence1] {axis_name} busy before home -> quick stop")
-                ctrl.force_stop(quiet=True)
-                time.sleep(0.1)
-            ctrl.home_blocking()
-            emit_ui_log(f"[Sequence1] {axis_name} homed")
-            if axis_name == "Vertical Axis":
-                self._handle_vertical_motion_update()
+    # ----- Cleaning sequence integration -----
 
-        if not self.syringe_panel or not self.syringe_panel.ready:
-            raise RuntimeError("Syringe pump unavailable for homing")
-        emit_ui_log("[Sequence1] Homing Syringe")
-        self.syringe_panel.home_blocking()
-        emit_ui_log("[Sequence1] Syringe homed")
-        emit_ui_log("[Sequence1] Full initialization complete")
+    def _start_cleaning_sequence(self):
+        with self._sequence_lock:
+            if self._sequence_thread and self._sequence_thread.is_alive():
+                emit_ui_log("[Cleaning] Sequence already running")
+                return
+        emit_ui_log("Cleaning sequence begin")
+        # Keep elapsed timer in sync with sequences
+        self._maf_start_flow_meter_ui()
+        self._sequence_prompt_title = "Cleaning Step"
+        thread = threading.Thread(target=self._run_cleaning_sequence, daemon=True)
+        self._register_sequence_runner(
+            "Cleaning Sequence",
+            thread,
+            cancel_callback=self._cancel_cleaning_sequence,
+        )
+        thread.start()
 
-    def _sequence1_init(self):
-        emit_ui_log("[Sequence1] Pre-check: ensuring relays 1,5,6 are OFF")
-        for channel in (1, 5, 6):
-            self._set_relay_state(channel, False, quiet=True)
-        emit_ui_log("[Sequence1] Pre-check complete")
+    def _cancel_cleaning_sequence(self):
+        emit_ui_log("[Cleaning] Cancel requested")
+        self._stop_event.set()
 
-    def _ensure_sequence1_ready(self):
+    def _run_cleaning_sequence(self):
         try:
-            self._validate_sequence1_prereqs()
-            emit_ui_log("[Sequence1] Hardware ready")
-            return
+            self._run_sequence_initialization("CLEAN")
+            run_maf_cleaning_sequence(
+                stop_flag=lambda: self._stop_event.is_set(),
+                log=emit_ui_log,
+                relays=self.relays,
+                motor_pump=self._peristaltic_sequence_adapter,
+                pid_controller=self.pid_controller,
+                home_pid_valve=self._home_pid_valve_blocking,
+                move_horizontal_to_filtering=lambda: self._maf_move_axis_to_preset(
+                    "Horizontal Axis", "filtering"
+                ),
+                move_horizontal_to_home=lambda: self._maf_move_axis_to_preset(
+                    "Horizontal Axis", "filter in"
+                ),
+                move_vertical_close_plate=lambda: self._maf_move_axis_to_preset(
+                    "Vertical Axis", "close"
+                ),
+                move_vertical_open_plate=lambda: self._maf_move_axis_to_preset(
+                    "Vertical Axis", "open"
+                ),
+                before_step=self._prompt_user_on_prompts,
+            )
+            emit_ui_log("Cleaning sequence complete")
         except Exception as exc:
-            emit_ui_log(f"[Sequence1] Prereqs missing ({exc}); running Initialize first")
-        self._auto_initialize_for_sequence()
-        self._validate_sequence1_prereqs()
-        emit_ui_log("[Sequence1] Hardware ready after initialization")
+            emit_ui_log(f"[Cleaning] Sequence error: {exc}")
+        finally:
+            self._stop_event.clear()
+            with self._sequence_lock:
+                self._sequence_thread = None
+                self._sequence_cancel = None
+                self._sequence_name = None
+            self._sequence_prompt_title = "Sequence Step"
 
-    def _validate_sequence1_prereqs(self):
-        if not self.relays:
-            raise RuntimeError("Relay board unavailable. Run Initialize first.")
-        if not self.rotary_panel or not getattr(self.rotary_panel, "valve", None):
-            raise RuntimeError("Rotary valve control unavailable")
-        vertical = self._get_axis_control("Vertical Axis")
-        if vertical is None or not vertical.driver.ready:
-            raise RuntimeError("Vertical axis unavailable. Run Initialize first.")
-        horizontal = self._get_axis_control("Horizontal Axis")
-        if horizontal is None or not horizontal.driver.ready:
-            raise RuntimeError("Horizontal axis unavailable. Run Initialize first.")
-        if not self.syringe_panel or not self.syringe_panel.ready:
-            raise RuntimeError("Syringe pump unavailable. Run Initialize first.")
-        if self._syringe_sequence_adapter is None:
-            raise RuntimeError("Syringe adapter not configured")
-
-    def _auto_initialize_for_sequence(self):
+    def _run_sequence_initialization(self, tag: str):
+        emit_ui_log(f"[{tag}] Pre-sequence initialization start")
         if self._init_running:
-            emit_ui_log("[Sequence1] Waiting for ongoing initialization to finish")
-            while self._init_running:
-                if self._stop_event.is_set():
-                    raise RuntimeError("Initialization interrupted")
-                time.sleep(0.1)
-            emit_ui_log("[Sequence1] Initialization ready")
-            return
-        emit_ui_log("[Sequence1] Pre-sequence initialization start")
-        self._stop_event.clear()
+            raise RuntimeError("Initialization already in progress")
         self._init_abort.clear()
-        self._init_running = True
-        self._set_init_enabled(False)
-        self._initialize_sequence()
-        emit_ui_log("[Sequence1] Pre-sequence initialization complete")
+        try:
+            self._init_devices()
+        except Exception as exc:
+            raise RuntimeError(f"{tag} initialization failed: {exc}") from exc
+        emit_ui_log(f"[{tag}] Pre-sequence initialization complete")
 
-    def _sequence_move_axis(self, axis_name: str, preset_key: str):
+    def _maf_reset_flow_totals(self):
+        """Reset flow totals without starting the UI stream."""
+        if self.flow_panel:
+            def _reset_ui():
+                try:
+                    self.flow_panel._handle_reset()
+                except Exception as exc:
+                    emit_ui_log(f"[MAF] Flow panel reset failed: {exc}")
+            if threading.current_thread() is threading.main_thread():
+                _reset_ui()
+            else:
+                self._invoke_ui(_reset_ui)
+        sensor = getattr(self, "flow_meter", None)
+        if sensor and hasattr(sensor, "reset_totals"):
+            try:
+                sensor.reset_totals()
+            except Exception as exc:
+                emit_ui_log(f"[MAF] Flow sensor reset failed: {exc}")
+
+    def _maf_start_flow_meter(self):
+        """Reset totals and start the flow meter UI stream."""
+        if self.flow_panel:
+            def _reset_and_start():
+                try:
+                    self.flow_panel._handle_reset()
+                    self.flow_panel._handle_start()
+                except Exception as exc:
+                    emit_ui_log(f"[MAF] Flow panel start failed: {exc}")
+            if threading.current_thread() is threading.main_thread():
+                _reset_and_start()
+            else:
+                self._invoke_ui(_reset_and_start)
+        sensor = getattr(self, "flow_meter", None)
+        if sensor and hasattr(sensor, "reset_totals"):
+            try:
+                sensor.reset_totals()
+            except Exception as exc:
+                emit_ui_log(f"[MAF] Flow sensor reset failed: {exc}")
+
+    def _maf_stop_flow_meter(self):
+        """Stop flow readings but leave the elapsed timer untouched."""
+        if self.flow_panel:
+            def _stop_only():
+                try:
+                    self.flow_panel._stop_stream()
+                except Exception as exc:
+                    emit_ui_log(f"[MAF] Flow panel stop failed: {exc}")
+            if threading.current_thread() is threading.main_thread():
+                _stop_only()
+            else:
+                self._invoke_ui(_stop_only)
+
+    # Backward compatibility for MAF_Sequence_2 signature
+    def _maf_reset_flow_readings(self):
+        self._maf_reset_flow_totals()
+
+    def _maf_get_total_volume_ml(self) -> float:
+        sensor = getattr(self, "flow_meter", None)
+        total_liters = getattr(sensor, "_total_liters", None)
+        if total_liters is None:
+            return 0.0
+        try:
+            return float(total_liters) * 1000.0
+        except Exception:
+            return 0.0
+
+    def _maf_enable_temp_controller(self):
+        if self.temperature_panel:
+            self.temperature_panel._handle_command_on()
+
+    def _maf_disable_temp_controller(self):
+        if self.temperature_panel:
+            self.temperature_panel._handle_command_off()
+
+    def _maf_wait_for_temp_ready(self, timeout: float = 120.0):
+        if not self.temperature_panel:
+            return
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._stop_event.is_set():
+                raise InterruptedError("Sequence canceled")
+            state = self.temperature_panel._read_ready_state()
+            if state:
+                return
+            time.sleep(0.5)
+        raise RuntimeError("Temperature controller ready timeout")
+
+    def _maf_wait_for_maf_heating(self, duration: float = 10.0):    # 14 mins total = 840 sec (4 mins for MAF to reach temperature plus 10 mins for lising)
+        end = time.time() + duration
+        while time.time() < end:
+            if self._stop_event.is_set():
+                raise InterruptedError("Sequence canceled")
+            time.sleep(0.5)
+
+    def _maf_move_axis_to_preset(self, axis_name: str, preset_key: str):
         ctrl = self._get_axis_control(axis_name)
         if ctrl is None:
             raise RuntimeError(f"{axis_name} control unavailable")
+        ctrl._check_pre_move(raise_on_block=True)
+        presets = AXIS_PRESET_POSITIONS.get(axis_name, {})
+        target_info = presets.get(preset_key)
+        if target_info is None:
+            raise RuntimeError(f"No preset '{preset_key}' configured for {axis_name}")
+        _, target_mm = target_info
         if not ctrl.driver.ready:
-            raise RuntimeError(f"{axis_name} unavailable")
-        preset_key = preset_key.strip().lower()
-        preset_map = AXIS_PRESET_POSITIONS.get(axis_name)
-        if not preset_map or preset_key not in preset_map:
-            raise RuntimeError(f"{axis_name} preset '{preset_key}' undefined")
-        if axis_name == "Horizontal Axis":
-            allowed, message = self._evaluate_horizontal_axis_state()
-            if not allowed:
-                raise RuntimeError(message or "Horizontal axis locked")
-        label, target_mm = preset_map[preset_key]
-        ctrl.driver.move_to_mm(target_mm, SEQUENCE_AXIS_SPEED_RPM, context=f"[Sequence1] {label}")
+            raise RuntimeError(f"{axis_name} not connected")
+        rpm = SEQUENCE_AXIS_SPEED_RPM
+        ctrl.driver.move_to_mm(target_mm, rpm, context=f"sequence:{preset_key}")
         ctrl.set_cached_position_mm(target_mm)
-        if axis_name == "Vertical Axis":
-            self._handle_vertical_motion_update()
+        ctrl._emit_motion_callbacks()
 
-    def _sequence_select_rotary_port(self, port: int):
-        panel = self.rotary_panel
-        if panel is None or not getattr(panel, "valve", None):
-            raise RuntimeError("Rotary valve unavailable")
-        if not (1 <= int(port) <= panel.port_count):
-            raise RuntimeError(f"Rotary port {port} out of range")
-        emit_ui_log(f"[Sequence1] Rotary valve -> Port {port}")
-        ok = panel.valve.set_port(int(port))
-        if not ok:
-            raise RuntimeError(f"Rotary valve port {port} not acknowledged")
-        panel._invoke_ui(lambda: panel._apply_switch_result(int(port), True))
+    def _maf_prompt_user_before_step(self, label: str):
+        # Prompt disabled: no dialog or wait.
+        return
+
+    def _prompt_user_on_prompts(self, label: str):
+        """Block on user confirmation for prompt-only steps."""
+        if "Prompt message" not in label:
+            return
+        self._sequence_prompt_event.clear()
+        # Emit signal so the dialog runs on the UI thread
+        self.sequence_prompt_signal.emit(label)
+        # Wait until user clicks Continue or Cancel; cancel sets stop_event inside dialog.
+        self._sequence_prompt_event.wait()
+
+    def _show_sequence_prompt_dialog(self, label: str):
+        msg = QMessageBox(self)
+        msg.setWindowTitle(self._sequence_prompt_title or "Sequence Step")
+        msg.setText(f"Next step:\n\n{label}\n\nPress Continue to execute this step.")
+        msg.setStyleSheet(
+            "QLabel {color: #f8fafc; font-size: 14px;}"
+            "QPushButton {font-weight: 600; padding: 4px 12px; background-color: #e5e7eb; color: #111827; border-radius: 4px;}"
+            "QPushButton:pressed {background-color: #cbd5f5;}"
+            "QMessageBox {background-color: #0f172a; color: #f8fafc;}"
+        )
+        continue_btn = msg.addButton("Continue", QMessageBox.AcceptRole)
+        cancel_btn = msg.addButton("Cancel Sequence", QMessageBox.RejectRole)
+        msg.setIcon(QMessageBox.Information)
+        msg.exec_()
+        clicked = msg.clickedButton()
+        if clicked == cancel_btn:
+            self._stop_event.set()
+        self._sequence_prompt_event.set()
+
+    def _home_pid_valve_async(self):
+        def _home():
+            try:
+                emit_ui_log("[PID] Homing valve after STOP")
+                self.pid_controller.homing_routine()
+                emit_ui_log("[PID] Valve homed")
+            except Exception as exc:
+                emit_ui_log(f"[PID] Homing error after STOP: {exc}")
+
+        threading.Thread(target=_home, daemon=True).start()
+
+    def _home_pid_valve_blocking(self):
+        """Home the PID valve synchronously for sequence steps."""
+        try:
+            emit_ui_log("[PID] Starting PID valve homing")
+            self.pid_controller.homing_routine()
+            emit_ui_log("[PID] PID valve homed")
+        except Exception as exc:
+            emit_ui_log(f"[PID] Homing error: {exc}")
+            raise
 
     def _set_init_enabled(self, enabled: bool):
         self.init_state_signal.emit(enabled)
@@ -2165,13 +3114,21 @@ class MainWindow(QWidget):
                     self._handle_vertical_motion_update()
             except Exception as exc:
                 raise RuntimeError(f"{ctrl.name} homing error: {exc}") from exc
-
+        
         if self.syringe_panel and (self.syringe_panel.ready or syringe_ready):
             self._check_init_abort()
             emit_ui_log("[Syringe] Auto-homing…")
             try:
+                # Ensure Valve 1 is open during syringe homing
+                emit_ui_log("[Syringe] Opening Valve 1 (relay 1) for homing")
+                relay_on = self._set_relay_state(1, True)
+                if not relay_on:
+                    emit_ui_log("[Syringe] Relay 1 failed to turn ON before homing; continuing homing anyway")
+                time.sleep(0.2)
                 self.syringe_panel.home_blocking()
                 emit_ui_log("[Syringe] Homed and at standstill")
+                # Close Valve 1 after homing completes
+                self._set_relay_state(1, False)
             except Exception as exc:
                 raise RuntimeError(f"Syringe homing error: {exc}") from exc
         else:
@@ -2235,7 +3192,43 @@ class MainWindow(QWidget):
         return True, ""
 
     def _prepare_outputs_for_init(self):
-        self._relays_all_off(auto=True)
+        controller = getattr(self, "pid_controller", None)
+        if controller:
+            disable_wait = False
+            if getattr(controller, "enabled", False):
+                try:
+                    controller.set_enabled(False)
+                    disable_wait = True
+                    emit_ui_log("[PID] Disabled before initialization homing")
+                except Exception as exc:
+                    emit_ui_log(f"[PID] Failed to disable before homing: {exc}")
+                if self.pid_panel:
+                    self._invoke_ui(self.pid_panel.force_stop)
+            if disable_wait:
+                time.sleep(0.5)
+            try:
+                controller.homing_routine()
+                emit_ui_log("[PID] Valve homed for initialization")
+            except Exception as exc:
+                emit_ui_log(f"[PID] Homing during initialization failed: {exc}")
+        self._force_peltier_off_for_init()
+
+    def _force_peltier_off_for_init(self):
+        panel = getattr(self, "temperature_panel", None)
+        if panel:
+            def _force_off():
+                try:
+                    panel.force_stop()
+                    emit_ui_log("[TempCtrl] Peltier forced OFF for initialization")
+                except Exception as exc:
+                    emit_ui_log(f"[TempCtrl] Failed to force OFF for initialization: {exc}")
+            self._invoke_ui(_force_off)
+        else:
+            try:
+                safe_plc_call("digital_write", plc.digital_write,TEMP_COMMAND_PIN, False)
+                emit_ui_log("[TempCtrl] Peltier command pin forced OFF (no panel)")
+            except Exception as exc:
+                emit_ui_log(f"[TempCtrl] Unable to force Peltier OFF: {exc}")
 
     def _ensure_relays_off_before_connect(self):
         if self.relays and any(self.relay_states.values()):
@@ -2244,11 +3237,6 @@ class MainWindow(QWidget):
 
     def _get_axis_control(self, name: str) -> Optional["StepperAxisControl"]:
         return next((ctrl for ctrl in self.axis_controls if ctrl.name == name), None)
-
-    def _require_relays(self) -> RelayBoard06:
-        if not self.relays:
-            raise RuntimeError("Relay board unavailable")
-        return self.relays
 
     def _connect_relays(self):
         try:
@@ -2339,10 +3327,10 @@ class MainWindow(QWidget):
 
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(12 if title is None else 10)
-        grid.setVerticalSpacing(12 if title is None else 10)
+        grid.setHorizontalSpacing(10 if title is None else 6)
+        grid.setVerticalSpacing(10 if title is None else 8)
 
-        cols = 2
+        cols = 3 if title is None else max(1, int(len(mapping) ** 0.5))
         for idx, (channel, label) in enumerate(mapping):
             btn = RelayToggleButton(
                 channel=channel,
