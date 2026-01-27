@@ -27,7 +27,22 @@ sudo apt-get update
 sudo apt-get install -y git python3-venv python3-pip
 ```
 
-### Step 3 - Install Node.js 20.x
+### Step 3 - Install Industrial Shields librpiplc
+Run on the Pi:
+```
+sudo apt update
+sudo apt install -y git cmake
+cd ~
+git clone https://github.com/Industrial-Shields/librpiplc.git
+cd ~/librpiplc
+cmake -B build/ -DPLC_VERSION=RPIPLC_V6 -DPLC_MODEL=RPIPLC_38AR
+cmake --build build/ -- -j $(nproc)
+sudo cmake --install build/
+sudo chown -R $USER:$USER ~/test/
+sudo ldconfig
+```
+
+### Step 4 - Install Node.js 20.x
 Run on the Pi:
 ```
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
@@ -36,14 +51,14 @@ node -v
 npm -v
 ```
 
-### Step 4 - Clone the repo
+### Step 5 - Clone the repo
 Run on the Pi:
 ```
 cd ~
 git clone https://github.com/PkamiRIC/cMAF-System.git
 ```
 
-### Step 5 - Fix SSH host key warning after reflash
+### Step 6 - Fix SSH host key warning after reflash
 If SSH says the host key changed (new SD card), run on your PC:
 ```
 ssh-keygen -R 10.0.46.111
@@ -53,7 +68,7 @@ Then reconnect:
 ssh pi@10.0.46.111
 ```
 
-### Step 6 - Ensure Wi-Fi auto-connect (NetworkManager)
+### Step 7 - Ensure Wi-Fi auto-connect (NetworkManager)
 Run on the Pi:
 ```
 nmcli connection show
@@ -65,7 +80,7 @@ nmcli connection modify "CyRIC-INT" connection.autoconnect-priority 10
 nmcli connection delete "<UUID_OR_NAME_OF_OLD_DUPLICATE>"
 ```
 
-### Step 6 - Create venv and install backend dependencies
+### Step 8 - Create venv and install backend dependencies
 Run on the Pi:
 ```
 cd ~/cMAF-System/device
@@ -74,7 +89,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Step 7 - Create device2 config
+### Step 9 - Create device2 config
 Run on the Pi:
 ```
 cd ~/cMAF-System/device/config
@@ -89,7 +104,7 @@ Edit `device2.yaml` and set:
 - `flow_sensor.port: /dev/ttyUSB0`
 - `temperature` pins (Q0.6/I0.11/8)
 
-### Step 8 - Create backend systemd service
+### Step 10 - Create backend systemd service
 Run on the Pi:
 ```
 sudo tee /etc/systemd/system/device2.service > /dev/null <<'EOF'
@@ -114,7 +129,7 @@ sudo systemctl enable --now device2.service
 sudo systemctl status device2.service --no-pager
 ```
 
-### Step 9 - Build Next.js UI on PC
+### Step 11 - Build Next.js UI on PC
 Run on your PC:
 ```
 cd C:\Users\p.kamintzis\OneDrive - Cy.R.I.C. Cyprus Research and Innovation Center Ltd\Work\WARP\cMAF-System\ui\warp-console
@@ -122,13 +137,13 @@ npm install
 npm run build
 ```
 
-### Step 10 - Copy UI build to the Pi
+### Step 12 - Copy UI build to the Pi
 Run on your PC:
 ```
 scp -r "C:\Users\p.kamintzis\OneDrive - Cy.R.I.C. Cyprus Research and Innovation Center Ltd\Work\WARP\cMAF-System\ui\warp-console\.next" pi@10.0.46.111:/home/pi/cMAF-System/ui/warp-console/
 ```
 
-### Step 11 - Create UI systemd service (port 3002)
+### Step 13 - Create UI systemd service (port 3002)
 Run on the Pi:
 ```
 sudo tee /etc/systemd/system/warp-ui.service > /dev/null <<'EOF'
