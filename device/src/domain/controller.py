@@ -345,8 +345,7 @@ class DeviceController:
     # ---------------------------------------------------
     def move_axis(self, axis: str, position_mm: float, rpm: float) -> None:
         # Allow manual moves when not running a user sequence (idle or homing)
-        if self.state.state == "RUNNING" and self.state.current_sequence not in {None, "homing"}:
-            raise RuntimeError("Manual moves locked while a sequence is running")
+        # Manual moves allowed even if a sequence is running.
         # Clear stale stop flags from prior errors before a manual move.
         self._stop_event.clear()
         axis_norm = axis.upper()
@@ -392,8 +391,7 @@ class DeviceController:
         self._stop_event.clear()
         axis_norm = axis.upper()
         self._log(f"[Axis {axis_norm}] homing (manual)")
-        if self.state.state == "RUNNING" and self.state.current_sequence not in {None, "homing"}:
-            raise RuntimeError("Manual moves locked while a sequence is running")
+        # Manual moves allowed even if a sequence is running.
         if axis_norm == "Z":
             self._home_vertical_axis()
         elif axis_norm == "X":
@@ -842,8 +840,7 @@ class DeviceController:
             return None
 
     def _set_relay(self, channel: int, enabled: bool, allow_when_running: bool) -> bool:
-        if self.state.state == "RUNNING" and not allow_when_running:
-            raise RuntimeError("Relays locked while a sequence is running")
+        # Allow relay control even if a sequence is running.
         ok = self.relays.on(channel) if enabled else self.relays.off(channel)
         if ok:
             self.relay_states[channel] = enabled
@@ -853,8 +850,7 @@ class DeviceController:
         return ok
 
     def _ensure_manual_allowed(self) -> None:
-        if self.state.state == "RUNNING":
-            raise RuntimeError("Manual control locked while a sequence is running")
+        return
 
     def _noop(self, label: str) -> Callable[[], None]:
         def _fn():
