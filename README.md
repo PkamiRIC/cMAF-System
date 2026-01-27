@@ -53,6 +53,18 @@ Then reconnect:
 ssh pi@10.0.46.111
 ```
 
+### Step 6 - Ensure Wi-Fi auto-connect (NetworkManager)
+Run on the Pi:
+```
+nmcli connection show
+nmcli connection modify "CyRIC-INT" connection.autoconnect yes
+nmcli connection modify "CyRIC-INT" connection.autoconnect-priority 10
+```
+(Optional) remove duplicate old connections if needed:
+```
+nmcli connection delete "<UUID_OR_NAME_OF_OLD_DUPLICATE>"
+```
+
 ### Step 6 - Create venv and install backend dependencies
 Run on the Pi:
 ```
