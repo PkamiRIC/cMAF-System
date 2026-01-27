@@ -139,9 +139,10 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/home/pi/cMAF-System/ui/warp-console
-ExecStart=/usr/bin/npm run start -- --hostname 0.0.0.0 --port 3002
 Restart=on-failure
 Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/npm run start -- --hostname 0.0.0.0 --port 3002
 User=pi
 Group=pi
 
@@ -153,6 +154,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now warp-ui.service
 sudo systemctl status warp-ui.service --no-pager
 ```
+Note: If the service fails with status=127, make sure `npm` is in PATH or use the absolute path from `which npm`.
 
 ## Prereqs
 - Python 3.10+ (backend)
