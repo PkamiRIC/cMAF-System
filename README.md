@@ -127,6 +127,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+If the backend fails with `ModuleNotFoundError: simple_pid`, install it in the venv:
+```
+pip install simple-pid
+```
 
 ### Step 11 - Create device2 config
 Run on the Pi:
