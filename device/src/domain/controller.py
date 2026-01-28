@@ -339,10 +339,16 @@ class DeviceController:
         self._broadcast_status()
 
         with self._motion_lock:
-            self.syringe.goto_absolute(volume_ml, flow_ml_min)
-            idle = self.syringe.wait_until_idle(timeout=120, stop_flag=self._stop_event.is_set)
-        if not idle:
-            raise RuntimeError("Syringe move timed out")
+            for attempt in range(1, 3):
+                self.syringe.goto_absolute(volume_ml, flow_ml_min)
+                ok = self.syringe.wait_until_at_target(
+                    timeout=120, stop_flag=self._stop_event.is_set
+                )
+                if ok:
+                    break
+                if attempt >= 2:
+                    raise RuntimeError("Syringe move timed out")
+                time.sleep(0.2)
 
         # Do not overwrite syringe_volume_ml here; poller updates it continuously.
         self._broadcast_status()
@@ -368,7 +374,16 @@ class DeviceController:
         self._log("[Syringe] homing")
         # Do not force syringe_busy; poller will reflect true motion.
         with self._motion_lock:
-            self.syringe.home(stop_flag=self._stop_event.is_set)
+            for attempt in range(1, 3):
+                self.syringe.home(stop_flag=self._stop_event.is_set)
+                ok = self.syringe.wait_until_at_target(
+                    timeout=120, stop_flag=self._stop_event.is_set
+                )
+                if ok:
+                    break
+                if attempt >= 2:
+                    raise RuntimeError("Syringe home timed out")
+                time.sleep(0.2)
         with self._state_lock:
             self.state.syringe_target_ml = 0.0
             self.state.syringe_homed = True
@@ -1015,6 +1030,8 @@ class _SyringeAdapter:
             raise RuntimeError("Operation stopped")
         with self.controller._motion_lock:
             self.controller.syringe.goto_absolute(volume_ml, flow_ml_min)
-            ok = self.controller.syringe.wait_until_idle(timeout=120, stop_flag=self.stop_event.is_set)
+            ok = self.controller.syringe.wait_until_at_target(
+                timeout=120, stop_flag=self.stop_event.is_set
+            )
         if not ok:
             raise RuntimeError("Syringe move timed out")

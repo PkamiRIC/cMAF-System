@@ -239,6 +239,39 @@ class SyringePump:
                 return False
             time.sleep(0.5)
 
+    def wait_until_at_target(
+        self,
+        timeout: Optional[float] = None,
+        stop_flag: Optional[Callable[[], bool]] = None,
+        tol_steps: int = 500,
+    ) -> bool:
+        """
+        Wait until standstill + pos_ok and within tolerance of last commanded target.
+        Returns False on timeout or if stop_flag() becomes True.
+        """
+        start_time = time.time()
+        target_steps = self.target_position
+        vel_thresh_steps = 5
+        while True:
+            if stop_flag and stop_flag():
+                return False
+            status = self.read_status()
+            if status is not None:
+                standstill = int(status.get("standstill", 1))
+                pos_ok = int(status.get("pos_ok", 0))
+                actual_pos = int(status.get("actual_position", 0))
+                actual_vel = int(status.get("actual_velocity", 0))
+                if (
+                    standstill == 1
+                    and pos_ok == 1
+                    and abs(actual_pos - target_steps) <= tol_steps
+                    and abs(actual_vel) <= vel_thresh_steps
+                ):
+                    return True
+            if timeout is not None and (time.time() - start_time) >= timeout:
+                return False
+            time.sleep(0.5)
+
     def home(self, stop_flag: Optional[Callable[[], bool]] = None) -> None:
         """Send homing frames and wait until the pump reports idle."""
 

@@ -41,9 +41,18 @@ class AxisDriver:
             raise ValueError("steps_per_mm must be > 0")
         volume_ml = (target_mm * steps_per_mm) / steps_per_ml
         flow_ml_min = max(rpm, 0.1) * 5  # AXIS_SPEED_STEPS_PER_RPM=5 in legacy
-        pump.goto_absolute(volume_ml, flow_ml_min)
         target_steps = int(round(target_mm * steps_per_mm))
-        self._wait_until_at_target(target_steps, timeout=30.0, stop_flag=stop_flag)
+        for attempt in range(1, 3):
+            if stop_flag and stop_flag():
+                raise RuntimeError("Operation stopped")
+            pump.goto_absolute(volume_ml, flow_ml_min)
+            try:
+                self._wait_until_at_target(target_steps, timeout=30.0, stop_flag=stop_flag)
+                return
+            except Exception:
+                if attempt >= 2:
+                    raise
+                time.sleep(0.2)
 
     def read_position_mm(self) -> Optional[float]:
         pump = self._pump
