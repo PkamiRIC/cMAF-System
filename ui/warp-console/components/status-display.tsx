@@ -32,7 +32,14 @@ const apiBase = getApiBase()
 
 async function post(path: string) {
   const res = await fetch(`${apiBase}${path}`, { method: "POST" })
-  if (!res.ok) throw new Error(`POST ${path} failed (${res.status})`)
+  if (!res.ok) {
+    let detail = ""
+    try {
+      const data = await res.json()
+      if (data?.detail) detail = String(data.detail)
+    } catch {}
+    throw new Error(detail || `POST ${path} failed (${res.status})`)
+  }
 }
 
 async function fetchStatus(): Promise<DeviceStatus> {

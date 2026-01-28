@@ -14,7 +14,14 @@ async function post(path: string, body?: any) {
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`POST ${path} failed (${res.status})`)
+  if (!res.ok) {
+    let detail = ""
+    try {
+      const data = await res.json()
+      if (data?.detail) detail = String(data.detail)
+    } catch {}
+    throw new Error(detail || `POST ${path} failed (${res.status})`)
+  }
 }
 
 async function fetchStatus(): Promise<DeviceStatus> {
