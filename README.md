@@ -111,8 +111,8 @@ ssh pi@WARP2PLC
 Run on the Pi:
 ```
 nmcli connection show
-nmcli connection modify "CyRIC-INT" connection.autoconnect yes
-nmcli connection modify "CyRIC-INT" connection.autoconnect-priority 10
+sudo nmcli connection modify "CyRIC-INT" connection.autoconnect yes
+sudo nmcli connection modify "CyRIC-INT" connection.autoconnect-priority 10
 ```
 (Optional) remove duplicate old connections if needed:
 ```
