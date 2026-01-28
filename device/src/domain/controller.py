@@ -185,6 +185,19 @@ class DeviceController:
         except Exception:
             pass
         try:
+            # Best-effort stop for syringe + axes
+            self.syringe.stop_motion(volume_hint_ml=self.state.syringe_volume_ml)
+        except Exception:
+            pass
+        try:
+            self.vertical_axis.stop_motion()
+        except Exception:
+            pass
+        try:
+            self.horizontal_axis.stop_motion()
+        except Exception:
+            pass
+        try:
             self.pid_valve.set_enabled(False)
         except Exception:
             pass
