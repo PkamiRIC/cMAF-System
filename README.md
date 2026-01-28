@@ -127,6 +127,22 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+Important (PLC I/O requires librpiplc): if `/home/pi/cMAF-System/device/.venv/bin/python` cannot import `librpiplc`,
+recreate the venv with system packages:
+```
+cd ~/cMAF-System/device
+mv .venv .venv.bak.$(date +%Y%m%d-%H%M%S)
+python3 -m venv .venv --system-site-packages
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install simple-pid
+```
+Revert if needed:
+```
+cd ~/cMAF-System/device
+rm -rf .venv
+mv .venv.bak.<TIMESTAMP> .venv
+```
 If the backend fails with `ModuleNotFoundError: simple_pid`, install it in the venv:
 ```
 pip install simple-pid
