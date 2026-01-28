@@ -152,6 +152,7 @@ class DeviceController:
     def start_sequence(self, sequence_name: str) -> None:
         if self._sequence_thread and self._sequence_thread.is_alive():
             raise RuntimeError("A sequence is already running")
+        self._ensure_motion_available("Sequence start")
 
         with self._state_lock:
             self.state.state = "RUNNING"
@@ -329,6 +330,7 @@ class DeviceController:
         We only record the target for UI display.
         """
         self._ensure_manual_allowed()
+        self._ensure_motion_available("Syringe move")
         # Clear stale stop flags from prior operations before manual moves.
         self._stop_event.clear()
         self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")
@@ -371,6 +373,7 @@ class DeviceController:
 
     def home_syringe(self) -> None:
         self._ensure_manual_allowed()
+        self._ensure_motion_available("Syringe home")
         self._log("[Syringe] homing")
         # Do not force syringe_busy; poller will reflect true motion.
         with self._motion_lock:
@@ -397,6 +400,7 @@ class DeviceController:
         # Manual moves allowed even if a sequence is running.
         # Clear stale stop flags from prior errors before a manual move.
         self._stop_event.clear()
+        self._ensure_motion_available(f"Axis {axis} move")
         axis_norm = axis.upper()
         if axis_norm == "Z":
             self._ensure_axis_ready(self.vertical_axis, "Vertical")
@@ -438,6 +442,7 @@ class DeviceController:
     def home_axis(self, axis: str) -> None:
         # Clear stale stop flags from earlier errors before homing.
         self._stop_event.clear()
+        self._ensure_motion_available(f"Axis {axis} home")
         axis_norm = axis.upper()
         self._log(f"[Axis {axis_norm}] homing (manual)")
         # Manual moves allowed even if a sequence is running.
@@ -469,6 +474,7 @@ class DeviceController:
         """
         if self._sequence_thread and self._sequence_thread.is_alive():
             raise RuntimeError("Another operation is already running")
+        self._ensure_motion_available("Initialize / homing")
 
         with self._state_lock:
             self.state.state = "RUNNING"
@@ -900,6 +906,15 @@ class DeviceController:
 
     def _ensure_manual_allowed(self) -> None:
         return
+
+    def _ensure_motion_available(self, label: str) -> None:
+        """
+        Reject new motion commands if another motion is in progress.
+        This is a fast, non-blocking check.
+        """
+        if not self._motion_lock.acquire(blocking=False):
+            raise RuntimeError(f"{label} rejected: motion busy")
+        self._motion_lock.release()
 
     def _retry_bool(self, label: str, fn: Callable[[], bool]) -> bool:
         last_ok = False
