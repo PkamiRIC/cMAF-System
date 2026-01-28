@@ -168,16 +168,22 @@ sudo systemctl status device2.service --no-pager
 ```
 Note: Ensure the service uses `config/device2.yaml` (not `device3.yaml`).
 
-### Step 13 - Build Next.js UI on PC
+### Step 13 - Build Next.js UI on the Pi
+Run on the Pi:
+```
+cd /home/pi/cMAF-System/ui/warp-console
+npm install
+npm run build
+```
+
+### Step 14 - Optional: build on PC and copy to the Pi (if Pi build fails)
 Run on your PC:
 ```
 cd C:/Users/p.kamintzis/OneDrive - Cy.R.I.C. Cyprus Research and Innovation Center Ltd/Work/WARP/cMAF-System/ui/warp-console
 npm install
 npm run build
 ```
-
-### Step 14 - Copy UI build to the Pi
-Run on your PC:
+Copy the build to the Pi:
 ```
 scp -r "C:/Users/p.kamintzis/OneDrive - Cy.R.I.C. Cyprus Research and Innovation Center Ltd/Work/WARP/cMAF-System/ui/warp-console/.next" pi@10.0.46.111:/home/pi/cMAF-System/ui/warp-console/
 ```
@@ -185,17 +191,14 @@ Verify on the Pi (must exist before starting the UI service):
 ```
 ls -ld /home/pi/cMAF-System/ui/warp-console/.next
 ```
-If `.next` is missing, re-run the `scp` command above.
-
-### Step 15 - Install UI runtime deps on the Pi
-Run on the Pi (required for `next start`):
+Then install UI runtime deps on the Pi:
 ```
 cd /home/pi/cMAF-System/ui/warp-console
 npm install --omit=dev
 ```
 Tip (if install is slow): add `--no-audit --no-fund`.
 
-### Step 16 - Create UI systemd service (port 3002)
+### Step 15 - Create UI systemd service (port 3002)
 Run on the Pi:
 ```
 sudo tee /etc/systemd/system/warp-ui.service > /dev/null <<'EOF'
