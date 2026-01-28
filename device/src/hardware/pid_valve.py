@@ -81,9 +81,12 @@ class PidValveController:
             return
         safe_plc_call("digital_write", plc.digital_write, self.config.en_pin, False)
         safe_plc_call("digital_write", plc.digital_write, self.config.dir_pin, False)
+        # Match legacy GUI behavior: step while hall reads 1, stop when it drops to 0.
         while True:
             val = safe_plc_call("digital_read", plc.digital_read, self.config.hall_pin)
-            if isinstance(val, int) and val == 1:
+            if not isinstance(val, int):
+                val = 0
+            if val == 0:
                 break
             safe_plc_call("digital_write", plc.digital_write, self.config.step_pin, True)
             time.sleep(0.001)
