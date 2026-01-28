@@ -223,6 +223,7 @@ class DeviceController:
 
     def set_peristaltic_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
+        self._log(f"[Peristaltic] {'Enabled' if enabled else 'Disabled'}")
         self.peristaltic.set_enabled(enabled)
         with self._state_lock:
             self.state.peristaltic_enabled = self.peristaltic.state.enabled
@@ -230,6 +231,7 @@ class DeviceController:
 
     def set_peristaltic_direction(self, forward: bool) -> None:
         self._ensure_manual_allowed()
+        self._log(f"[Peristaltic] Direction {'CW' if forward else 'CCW'}")
         self.peristaltic.set_direction(forward)
         with self._state_lock:
             self.state.peristaltic_direction_cw = self.peristaltic.state.direction_forward
@@ -237,6 +239,7 @@ class DeviceController:
 
     def set_peristaltic_speed(self, low_speed: bool) -> None:
         self._ensure_manual_allowed()
+        self._log(f"[Peristaltic] Speed {'Low' if low_speed else 'High'}")
         self.peristaltic.set_speed_checked(low_speed)
         with self._state_lock:
             self.state.peristaltic_low_speed = self.peristaltic.state.low_speed
@@ -244,6 +247,7 @@ class DeviceController:
 
     def set_pid_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
+        self._log(f"[PID] {'Enabled' if enabled else 'Disabled'}")
         self.pid_valve.set_enabled(enabled)
         with self._state_lock:
             self.state.pid_enabled = self.pid_valve.state.enabled
@@ -251,6 +255,7 @@ class DeviceController:
 
     def set_pid_setpoint(self, value: float) -> None:
         self._ensure_manual_allowed()
+        self._log(f"[PID] Setpoint {value}")
         self.pid_valve.set_setpoint(value)
         with self._state_lock:
             self.state.pid_setpoint = self.pid_valve.state.setpoint
@@ -258,16 +263,19 @@ class DeviceController:
 
     def pid_home(self) -> None:
         self._ensure_manual_allowed()
+        self._log("[PID] Home")
         self.pid_valve.homing_routine()
         self._broadcast_status()
 
     def pid_close(self) -> None:
         self._ensure_manual_allowed()
+        self._log("[PID] Close")
         self.pid_valve.force_close()
         self._broadcast_status()
 
     def set_temp_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
+        self._log(f"[Temp] {'Enabled' if enabled else 'Disabled'}")
         self.temperature.set_enabled(enabled)
         with self._state_lock:
             self.state.temp_enabled = self.temperature.state.enabled
