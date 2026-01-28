@@ -99,10 +99,12 @@ git clone https://github.com/PkamiRIC/cMAF-System.git
 If SSH says the host key changed (new SD card), run on your PC:
 ```
 ssh-keygen -R 10.0.46.111
+ssh-keygen -R WARP2PLC
 ```
 Then reconnect:
 ```
 ssh pi@10.0.46.111
+ssh pi@WARP2PLC
 ```
 
 ### Step 9 - Ensure Wi-Fi auto-connect (NetworkManager)
