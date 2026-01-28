@@ -82,7 +82,7 @@ export default function StatusDisplay() {
 
   const handleStop = async () => {
     try {
-      await post("/command/stop")
+      await post("/command/emergency_stop")
     } catch (err: any) {
       setError(err?.message || "Stop failed")
     }
