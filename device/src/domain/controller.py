@@ -93,6 +93,8 @@ class DeviceController:
         self._sse_subscribers: list[asyncio.Queue] = []
         # Serialize all physical motion (axes, syringe) across threads.
         self._motion_lock = threading.Lock()
+        self._io_retry_attempts = 3
+        self._io_retry_delay_s = 0.12
 
         # Hard caps (Position 3) for manual + sequence moves
         self._axis_max_limits = {
@@ -204,14 +206,20 @@ class DeviceController:
     def set_relay(self, channel: int, enabled: bool) -> bool:
         self._ensure_manual_allowed()
         self._log(f"[Relay] R{channel} {'ON' if enabled else 'OFF'}")
-        return self._set_relay(channel, enabled, allow_when_running=False)
+        return self._retry_bool(
+            f"Relay R{channel} {'ON' if enabled else 'OFF'}",
+            lambda: self._set_relay(channel, enabled, allow_when_running=False),
+        )
 
     def set_all_relays(self, enabled: bool) -> bool:
         """
         Convenience for bulk relay control using the board's all-on/all-off command.
         """
         self._ensure_manual_allowed()
-        ok = self.relays.all_on() if enabled else self.relays.all_off()
+        ok = self._retry_bool(
+            f"Relays ALL {'ON' if enabled else 'OFF'}",
+            lambda: self.relays.all_on() if enabled else self.relays.all_off(),
+        )
         self._log(f"[Relay] ALL {'ON' if enabled else 'OFF'}")
         if ok:
             for ch in range(1, 9):
@@ -224,7 +232,10 @@ class DeviceController:
     def set_peristaltic_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
         self._log(f"[Peristaltic] {'Enabled' if enabled else 'Disabled'}")
-        self.peristaltic.set_enabled(enabled)
+        self._retry_void(
+            f"Peristaltic {'enable' if enabled else 'disable'}",
+            lambda: self.peristaltic.set_enabled(enabled),
+        )
         with self._state_lock:
             self.state.peristaltic_enabled = self.peristaltic.state.enabled
         self._broadcast_status()
@@ -232,7 +243,10 @@ class DeviceController:
     def set_peristaltic_direction(self, forward: bool) -> None:
         self._ensure_manual_allowed()
         self._log(f"[Peristaltic] Direction {'CW' if forward else 'CCW'}")
-        self.peristaltic.set_direction(forward)
+        self._retry_void(
+            f"Peristaltic direction {'CW' if forward else 'CCW'}",
+            lambda: self.peristaltic.set_direction(forward),
+        )
         with self._state_lock:
             self.state.peristaltic_direction_cw = self.peristaltic.state.direction_forward
         self._broadcast_status()
@@ -240,7 +254,10 @@ class DeviceController:
     def set_peristaltic_speed(self, low_speed: bool) -> None:
         self._ensure_manual_allowed()
         self._log(f"[Peristaltic] Speed {'Low' if low_speed else 'High'}")
-        self.peristaltic.set_speed_checked(low_speed)
+        self._retry_void(
+            f"Peristaltic speed {'Low' if low_speed else 'High'}",
+            lambda: self.peristaltic.set_speed_checked(low_speed),
+        )
         with self._state_lock:
             self.state.peristaltic_low_speed = self.peristaltic.state.low_speed
         self._broadcast_status()
@@ -248,7 +265,10 @@ class DeviceController:
     def set_pid_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
         self._log(f"[PID] {'Enabled' if enabled else 'Disabled'}")
-        self.pid_valve.set_enabled(enabled)
+        self._retry_void(
+            f"PID {'enable' if enabled else 'disable'}",
+            lambda: self.pid_valve.set_enabled(enabled),
+        )
         with self._state_lock:
             self.state.pid_enabled = self.pid_valve.state.enabled
         self._broadcast_status()
@@ -256,7 +276,10 @@ class DeviceController:
     def set_pid_setpoint(self, value: float) -> None:
         self._ensure_manual_allowed()
         self._log(f"[PID] Setpoint {value}")
-        self.pid_valve.set_setpoint(value)
+        self._retry_void(
+            f"PID setpoint {value}",
+            lambda: self.pid_valve.set_setpoint(value),
+        )
         with self._state_lock:
             self.state.pid_setpoint = self.pid_valve.state.setpoint
         self._broadcast_status()
@@ -264,19 +287,22 @@ class DeviceController:
     def pid_home(self) -> None:
         self._ensure_manual_allowed()
         self._log("[PID] Home")
-        self.pid_valve.homing_routine()
+        self._retry_void("PID home", self.pid_valve.homing_routine)
         self._broadcast_status()
 
     def pid_close(self) -> None:
         self._ensure_manual_allowed()
         self._log("[PID] Close")
-        self.pid_valve.force_close()
+        self._retry_void("PID close", self.pid_valve.force_close)
         self._broadcast_status()
 
     def set_temp_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
         self._log(f"[Temp] {'Enabled' if enabled else 'Disabled'}")
-        self.temperature.set_enabled(enabled)
+        self._retry_void(
+            f"Temp {'enable' if enabled else 'disable'}",
+            lambda: self.temperature.set_enabled(enabled),
+        )
         with self._state_lock:
             self.state.temp_enabled = self.temperature.state.enabled
         self._broadcast_status()
@@ -859,6 +885,33 @@ class DeviceController:
 
     def _ensure_manual_allowed(self) -> None:
         return
+
+    def _retry_bool(self, label: str, fn: Callable[[], bool]) -> bool:
+        last_ok = False
+        for attempt in range(1, self._io_retry_attempts + 1):
+            try:
+                last_ok = bool(fn())
+            except Exception as exc:
+                last_ok = False
+                self._log(f"[Retry] {label} failed ({exc})")
+            if last_ok:
+                return True
+            if attempt < self._io_retry_attempts:
+                self._log(f"[Retry] {label} attempt {attempt + 1}/{self._io_retry_attempts}")
+                time.sleep(self._io_retry_delay_s)
+        return False
+
+    def _retry_void(self, label: str, fn: Callable[[], None]) -> None:
+        for attempt in range(1, self._io_retry_attempts + 1):
+            try:
+                fn()
+                return
+            except Exception as exc:
+                self._log(f"[Retry] {label} failed ({exc})")
+                if attempt < self._io_retry_attempts:
+                    self._log(f"[Retry] {label} attempt {attempt + 1}/{self._io_retry_attempts}")
+                    time.sleep(self._io_retry_delay_s)
+        raise RuntimeError(f"{label} failed after {self._io_retry_attempts} attempts")
 
     def _noop(self, label: str) -> Callable[[], None]:
         def _fn():
