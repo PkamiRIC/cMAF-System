@@ -26,21 +26,21 @@ async function fetchStatus(): Promise<DeviceStatus> {
 export default function ControlPanel() {
   const [verticalPos, setVerticalPos] = useState(0.0)
   const [verticalTarget, setVerticalTarget] = useState(25.0)
-  const [verticalVelocity, setVerticalVelocity] = useState(5.0)
+  const [verticalVelocity, setVerticalVelocity] = useState(0.25)
   const [verticalHomed, setVerticalHomed] = useState(false)
   const [verticalHomedDimmed, setVerticalHomedDimmed] = useState(true)
   const [verticalPosition, setVerticalPosition] = useState(0.0)
-  const [verticalSpeed, setVerticalSpeed] = useState(5.0)
+  const [verticalSpeed, setVerticalSpeed] = useState(0.25)
   const verticalMin = 0
   const verticalMax = 25
 
   const [horizontalPos, setHorizontalPos] = useState(0.0)
   const [horizontalTarget, setHorizontalTarget] = useState(133.0)
-  const [horizontalVelocity, setHorizontalVelocity] = useState(5.0)
+  const [horizontalVelocity, setHorizontalVelocity] = useState(0.25)
   const [horizontalHomed, setHorizontalHomed] = useState(false)
   const [horizontalHomedDimmed, setHorizontalHomedDimmed] = useState(true)
   const [horizontalPosition, setHorizontalPosition] = useState(0.0)
-  const [horizontalSpeed, setHorizontalSpeed] = useState(5.0)
+  const [horizontalSpeed, setHorizontalSpeed] = useState(0.25)
   const horizontalMin = 0
   const horizontalMax = 133
 
