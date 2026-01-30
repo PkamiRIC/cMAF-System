@@ -77,8 +77,13 @@ def create_app(config: DeviceConfig, config_path: str):
 
     @app.post("/command/home")
     def home():
-        controller.home_all()
-        return {"ok": True}
+        try:
+            controller.home_all()
+            return {"ok": True}
+        except RuntimeError as exc:
+            if "motion busy" in str(exc).lower():
+                raise HTTPException(status_code=409, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc))
 
     @app.post("/command/emergency_stop")
     def emergency():
