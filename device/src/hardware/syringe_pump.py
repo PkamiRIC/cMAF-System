@@ -1,4 +1,5 @@
 import struct
+import os
 import time
 from typing import Optional, Callable
 import threading
@@ -15,6 +16,8 @@ class SyringePump:
     def __init__(self, config: SyringeConfig | AxisConfig) -> None:
         self.config = config
         self.target_position = 0
+        self._debug_hex = os.getenv("WARP_HEX_LOG", "").strip() in {"1", "true", "TRUE", "yes", "YES"}
+        self._debug_poll = os.getenv("WARP_HEX_POLL", "").strip() in {"1", "true", "TRUE", "yes", "YES"}
 
     def _port_lock(self) -> threading.Lock:
         key = str(self.config.port)
@@ -113,7 +116,10 @@ class SyringePump:
                 ser.flush()
                 ser.write(command)
                 time.sleep(0.5)
-                return ser.read(30)
+                resp = ser.read(30)
+        if self._debug_hex:
+            print(f"[TX] addr={self.config.address} cmd={command.hex(' ')} rx={resp.hex(' ')}")
+        return resp
 
     # Public API -------------------------------------------------
     def goto_absolute(self, volume_ml: float, flow_rate_ml_min: float) -> None:
@@ -271,6 +277,9 @@ class SyringePump:
                 time.sleep(0.2)
                 continue
 
+            if self._debug_poll:
+                print(f"[POLL] addr={self.config.address} tx={poll.hex(' ')} rx={resp.hex(' ')}")
+
             if len(resp) != 19:
                 time.sleep(0.2)
                 continue
@@ -407,12 +416,17 @@ class SyringePump:
                     ser.write(cmd1)
                     ser.flush()
                     time.sleep(0.2)
-                    ser.read(8)
+                    resp1 = ser.read(8)
 
                     ser.write(cmd2)
                     ser.flush()
                     time.sleep(0.2)
-                    ser.read(8)
+                    resp2 = ser.read(8)
+            if self._debug_hex:
+                print(
+                    f"[HOME] addr={self.config.address} cmd1={cmd1.hex(' ')} "
+                    f"rx1={resp1.hex(' ')} cmd2={cmd2.hex(' ')} rx2={resp2.hex(' ')}"
+                )
         except Exception:
             return
 
