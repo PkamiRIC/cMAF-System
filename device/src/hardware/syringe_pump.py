@@ -157,6 +157,41 @@ class SyringePump:
         Send a MODBUS quick-stop frame using the current position.
         Mirrors the legacy GUI's quick_stop_device implementation.
         """
+        # Attempt ControlDWord HALT first (0x0100 0x000B) at register 0xA79F (42911).
+        ctrl = bytearray(
+            [
+                self.config.address,
+                0x10,
+                0xA7,
+                0x9F,
+                0x00,
+                0x02,
+                0x04,
+                0x01,
+                0x00,
+                0x00,
+                0x0B,
+            ]
+        )
+        ctrl.extend(self._crc16(ctrl))
+        try:
+            with self._port_lock():
+                with self._open_serial(timeout=0.5) as ser:
+                    ser.reset_input_buffer()
+                    ser.reset_output_buffer()
+                    ser.write(ctrl)
+                    time.sleep(0.01)
+                    resp = ser.read(8)
+            if (
+                len(resp) == 8
+                and resp[0] == self.config.address
+                and resp[1] == 0x10
+                and self._crc16(resp[:-2]) == resp[-2:]
+            ):
+                return True
+        except Exception:
+            pass
+
         status = self.read_status(max_tries=3)
         if status and "actual_position" in status:
             position = int(status["actual_position"])
