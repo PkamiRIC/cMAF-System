@@ -186,6 +186,7 @@ class DeviceController:
             pass
         try:
             # Best-effort stop for syringe + axes
+            self.syringe.quick_stop()
             self.syringe.stop_motion(volume_hint_ml=self.state.syringe_volume_ml)
         except Exception:
             pass
@@ -355,6 +356,8 @@ class DeviceController:
 
         with self._motion_lock:
             for attempt in range(1, 3):
+                if self._stop_event.is_set():
+                    raise RuntimeError("Operation stopped")
                 self.syringe.goto_absolute(volume_ml, flow_ml_min)
                 ok = self.syringe.wait_until_at_target(
                     timeout=120, stop_flag=self._stop_event.is_set
@@ -377,6 +380,7 @@ class DeviceController:
         with self._state_lock:
             vol_hint = self.state.syringe_volume_ml
         with self._motion_lock:
+            self.syringe.quick_stop()
             ok = self.syringe.stop_motion(volume_hint_ml=vol_hint)
         if not ok:
             raise RuntimeError("Syringe stop failed")
@@ -391,6 +395,8 @@ class DeviceController:
         # Do not force syringe_busy; poller will reflect true motion.
         with self._motion_lock:
             for attempt in range(1, 3):
+                if self._stop_event.is_set():
+                    raise RuntimeError("Operation stopped")
                 self.syringe.home(stop_flag=self._stop_event.is_set)
                 ok = self.syringe.wait_until_at_target(
                     timeout=120, stop_flag=self._stop_event.is_set
