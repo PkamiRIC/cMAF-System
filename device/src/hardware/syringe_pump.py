@@ -188,6 +188,7 @@ class SyringePump:
                 and resp[1] == 0x10
                 and self._crc16(resp[:-2]) == resp[-2:]
             ):
+                print(f"[QuickStop CTRL] addr={self.config.address} tx={ctrl.hex(' ')} rx={resp.hex(' ')}")
                 return True
         except Exception:
             pass
@@ -230,12 +231,14 @@ class SyringePump:
                     ser.write(frame)
                     time.sleep(0.01)
                     resp = ser.read(8)
-            return (
+            ok = (
                 len(resp) == 8
                 and resp[0] == self.config.address
                 and resp[1] == 0x10
                 and self._crc16(resp[:-2]) == resp[-2:]
             )
+            print(f"[QuickStop POS] addr={self.config.address} tx={frame.hex(' ')} rx={resp.hex(' ')} ok={ok}")
+            return ok
         except Exception:
             return False
 
