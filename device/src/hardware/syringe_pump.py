@@ -152,6 +152,58 @@ class SyringePump:
         except Exception:
             return False
 
+    def quick_stop(self, stop_flag: int = 0x01) -> bool:
+        """
+        Send a MODBUS quick-stop frame using the current position.
+        Mirrors the legacy GUI's quick_stop_device implementation.
+        """
+        status = self.read_status(max_tries=3)
+        if status and "actual_position" in status:
+            position = int(status["actual_position"])
+        else:
+            position = 0
+
+        frame = bytearray(
+            [
+                self.config.address,
+                0x10,
+                0xA7,
+                0x9E,
+                0x00,
+                0x07,
+                0x0E,
+                0x07,
+                0x00,
+                stop_flag,
+                0x03,
+                0x01,
+                0xF4,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+            ]
+        )
+        frame.extend(self._int_to_4byte_big_endian(position))
+        frame.extend(self._crc16(frame))
+
+        try:
+            with self._port_lock():
+                with self._open_serial(timeout=0.5) as ser:
+                    ser.reset_input_buffer()
+                    ser.reset_output_buffer()
+                    ser.write(frame)
+                    time.sleep(0.01)
+                    resp = ser.read(8)
+            return (
+                len(resp) == 8
+                and resp[0] == self.config.address
+                and resp[1] == 0x10
+                and self._crc16(resp[:-2]) == resp[-2:]
+            )
+        except Exception:
+            return False
+
     def move(self, volume_ml: float, flow_rate_ml_min: float) -> None:
         """Alias kept for compatibility with the old GUI code."""
         self.goto_absolute(volume_ml, flow_rate_ml_min)

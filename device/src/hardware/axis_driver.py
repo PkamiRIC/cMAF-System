@@ -83,12 +83,14 @@ class AxisDriver:
     def stop_motion(self) -> bool:
         """
         Best-effort stop for an axis:
-        command the current position with zero flow so motion ceases.
+        try a quick-stop frame first, then re-command current position with zero flow.
         """
         pump = self._pump
         if pump is None:
             return False
         try:
+            if pump.quick_stop():
+                return True
             return bool(pump.stop_motion())
         except Exception:
             return False
