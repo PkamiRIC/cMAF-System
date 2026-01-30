@@ -90,13 +90,14 @@ class AxisDriver:
             return False
         try:
             ok = pump.quick_stop()
-            print(f"[AxisStop] {self.name} addr={self.config.address} quick_stop={ok}")
+            self._log(f"[AxisStop] {self.name} addr={self.config.address} quick_stop={ok}")
             if ok:
                 return True
             soft_ok = bool(pump.stop_motion())
-            print(f"[AxisStop] {self.name} addr={self.config.address} soft_stop={soft_ok}")
+            self._log(f"[AxisStop] {self.name} addr={self.config.address} soft_stop={soft_ok}")
             return soft_ok
-        except Exception:
+        except Exception as exc:
+            self._log(f"[AxisStop] {self.name} addr={self.config.address} error={exc}")
             return False
 
     def _wait_until_idle(self, timeout: float, stop_flag: Optional[callable] = None) -> None:
