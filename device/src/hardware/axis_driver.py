@@ -90,9 +90,7 @@ class AxisDriver:
             return False
         try:
             if pump.quick_stop():
-                time.sleep(0.05)
-                if pump.quick_stop():
-                    return True
+                return True
             return bool(pump.stop_motion())
         except Exception:
             return False
