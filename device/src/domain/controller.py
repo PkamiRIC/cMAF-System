@@ -198,8 +198,7 @@ class DeviceController:
             pass
         try:
             self._log("[E-STOP] Stopping syringe")
-            self.syringe.quick_stop()
-            self.syringe.stop_motion(volume_hint_ml=self.state.syringe_volume_ml)
+            self._stop_syringe(force=True)
         except Exception:
             pass
         try:
@@ -389,9 +388,9 @@ class DeviceController:
         # Do not overwrite syringe_volume_ml here; poller updates it continuously.
         self._broadcast_status()
 
-    def stop_syringe(self) -> None:
+    def _stop_syringe(self, force: bool = False) -> None:
         # Allow stopping even during homing sequence
-        if self.state.state == "RUNNING" and self.state.current_sequence != "homing":
+        if not force and self.state.state == "RUNNING" and self.state.current_sequence != "homing":
             self._ensure_manual_allowed()
         self._clear_last_error()
         self._log("[Syringe] stop request")
@@ -406,6 +405,9 @@ class DeviceController:
         self._stop_event.clear()
         # Do not force syringe_busy; poller will update based on real status.
         self._broadcast_status()
+
+    def stop_syringe(self) -> None:
+        self._stop_syringe(force=False)
 
     def home_syringe(self) -> None:
         self._ensure_manual_allowed()
