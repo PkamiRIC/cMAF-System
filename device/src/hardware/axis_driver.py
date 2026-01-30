@@ -91,6 +91,7 @@ class AxisDriver:
         """
         pump = self._pump
         if pump is None:
+            self._log(f"[AxisStop] {self.name} addr={self.config.address} error=no_pump")
             return False
         try:
             ok = pump.quick_stop()
