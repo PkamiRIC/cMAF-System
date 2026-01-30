@@ -89,9 +89,13 @@ class AxisDriver:
         if pump is None:
             return False
         try:
-            if pump.quick_stop():
+            ok = pump.quick_stop()
+            print(f"[AxisStop] {self.name} addr={self.config.address} quick_stop={ok}")
+            if ok:
                 return True
-            return bool(pump.stop_motion())
+            soft_ok = bool(pump.stop_motion())
+            print(f"[AxisStop] {self.name} addr={self.config.address} soft_stop={soft_ok}")
+            return soft_ok
         except Exception:
             return False
 

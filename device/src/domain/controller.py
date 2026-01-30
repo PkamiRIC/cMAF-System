@@ -181,6 +181,7 @@ class DeviceController:
 
     def emergency_stop(self) -> None:
         self.stop_sequence()
+        self._log("[E-STOP] Emergency stop triggered")
         try:
             self.peristaltic.force_stop()
         except Exception:
@@ -192,10 +193,12 @@ class DeviceController:
         except Exception:
             pass
         try:
+            self._log("[E-STOP] Stopping vertical axis")
             self.vertical_axis.stop_motion()
         except Exception:
             pass
         try:
+            self._log("[E-STOP] Stopping horizontal axis")
             self.horizontal_axis.stop_motion()
         except Exception:
             pass
