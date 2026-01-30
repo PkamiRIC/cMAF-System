@@ -91,8 +91,16 @@ class AxisDriver:
         """
         pump = self._pump
         if pump is None:
-            self._log(f"[AxisStop] {self.name} addr={self.config.address} error=no_pump")
-            return False
+            # Best-effort: try to reconnect so E-STOP can still act
+            try:
+                self.connect()
+                pump = self._pump
+            except Exception as exc:
+                self._log(f"[AxisStop] {self.name} addr={self.config.address} error=no_pump:{exc}")
+                return False
+            if pump is None:
+                self._log(f"[AxisStop] {self.name} addr={self.config.address} error=no_pump")
+                return False
         try:
             ok = pump.quick_stop()
             self._log(f"[AxisStop] {self.name} addr={self.config.address} quick_stop={ok}")
