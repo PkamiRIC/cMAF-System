@@ -187,12 +187,6 @@ class DeviceController:
         except Exception:
             pass
         try:
-            # Best-effort stop for syringe + axes
-            self.syringe.quick_stop()
-            self.syringe.stop_motion(volume_hint_ml=self.state.syringe_volume_ml)
-        except Exception:
-            pass
-        try:
             self._log("[E-STOP] Stopping vertical axis")
             self.vertical_axis.stop_motion()
         except Exception:
@@ -200,6 +194,12 @@ class DeviceController:
         try:
             self._log("[E-STOP] Stopping horizontal axis")
             self.horizontal_axis.stop_motion()
+        except Exception:
+            pass
+        try:
+            self._log("[E-STOP] Stopping syringe")
+            self.syringe.quick_stop()
+            self.syringe.stop_motion(volume_hint_ml=self.state.syringe_volume_ml)
         except Exception:
             pass
         try:
