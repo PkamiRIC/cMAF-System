@@ -153,6 +153,7 @@ class DeviceController:
         if self._sequence_thread and self._sequence_thread.is_alive():
             raise RuntimeError("A sequence is already running")
         self._ensure_motion_available("Sequence start")
+        self._clear_last_error()
 
         with self._state_lock:
             self.state.state = "RUNNING"
@@ -220,6 +221,7 @@ class DeviceController:
 
     def set_relay(self, channel: int, enabled: bool) -> bool:
         self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log(f"[Relay] R{channel} {'ON' if enabled else 'OFF'}")
         return self._retry_bool(
             f"Relay R{channel} {'ON' if enabled else 'OFF'}",
@@ -231,6 +233,7 @@ class DeviceController:
         Convenience for bulk relay control using the board's all-on/all-off command.
         """
         self._ensure_manual_allowed()
+        self._clear_last_error()
         ok = self._retry_bool(
             f"Relays ALL {'ON' if enabled else 'OFF'}",
             lambda: self.relays.all_on() if enabled else self.relays.all_off(),
@@ -246,6 +249,7 @@ class DeviceController:
 
     def set_peristaltic_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log(f"[Peristaltic] {'Enabled' if enabled else 'Disabled'}")
         self._retry_void(
             f"Peristaltic {'enable' if enabled else 'disable'}",
@@ -257,6 +261,7 @@ class DeviceController:
 
     def set_peristaltic_direction(self, forward: bool) -> None:
         self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log(f"[Peristaltic] Direction {'CW' if forward else 'CCW'}")
         self._retry_void(
             f"Peristaltic direction {'CW' if forward else 'CCW'}",
@@ -268,6 +273,7 @@ class DeviceController:
 
     def set_peristaltic_speed(self, low_speed: bool) -> None:
         self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log(f"[Peristaltic] Speed {'Low' if low_speed else 'High'}")
         self._retry_void(
             f"Peristaltic speed {'Low' if low_speed else 'High'}",
@@ -279,6 +285,7 @@ class DeviceController:
 
     def set_pid_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log(f"[PID] {'Enabled' if enabled else 'Disabled'}")
         self._retry_void(
             f"PID {'enable' if enabled else 'disable'}",
@@ -290,6 +297,7 @@ class DeviceController:
 
     def set_pid_setpoint(self, value: float) -> None:
         self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log(f"[PID] Setpoint {value}")
         self._retry_void(
             f"PID setpoint {value}",
@@ -301,18 +309,21 @@ class DeviceController:
 
     def pid_home(self) -> None:
         self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log("[PID] Home")
         self._retry_void("PID home", self.pid_valve.homing_routine)
         self._broadcast_status()
 
     def pid_close(self) -> None:
         self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log("[PID] Close")
         self._retry_void("PID close", self.pid_valve.force_close)
         self._broadcast_status()
 
     def set_temp_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log(f"[Temp] {'Enabled' if enabled else 'Disabled'}")
         self._retry_void(
             f"Temp {'enable' if enabled else 'disable'}",
@@ -323,18 +334,21 @@ class DeviceController:
         self._broadcast_status()
 
     def flow_start(self) -> None:
+        self._clear_last_error()
         self.flow_sensor.start()
         with self._state_lock:
             self.state.flow_running = self.flow_sensor.is_running()
         self._broadcast_status()
 
     def flow_stop(self) -> None:
+        self._clear_last_error()
         self.flow_sensor.stop()
         with self._state_lock:
             self.state.flow_running = self.flow_sensor.is_running()
         self._broadcast_status()
 
     def flow_reset(self) -> None:
+        self._clear_last_error()
         self.flow_sensor.reset_totals()
         self._broadcast_status()
 
@@ -345,6 +359,7 @@ class DeviceController:
         """
         self._ensure_manual_allowed()
         self._ensure_motion_available("Syringe move")
+        self._clear_last_error()
         # Clear stale stop flags from prior operations before manual moves.
         self._stop_event.clear()
         self._log(f"[Syringe] move to {volume_ml} mL @ {flow_ml_min} mL/min")
@@ -375,6 +390,7 @@ class DeviceController:
         # Allow stopping even during homing sequence
         if self.state.state == "RUNNING" and self.state.current_sequence != "homing":
             self._ensure_manual_allowed()
+        self._clear_last_error()
         self._log("[Syringe] stop request")
         self._stop_event.set()
         with self._state_lock:
@@ -391,6 +407,7 @@ class DeviceController:
     def home_syringe(self) -> None:
         self._ensure_manual_allowed()
         self._ensure_motion_available("Syringe home")
+        self._clear_last_error()
         self._log("[Syringe] homing")
         # Do not force syringe_busy; poller will reflect true motion.
         with self._motion_lock:
@@ -420,6 +437,7 @@ class DeviceController:
         # Clear stale stop flags from prior errors before a manual move.
         self._stop_event.clear()
         self._ensure_motion_available(f"Axis {axis} move")
+        self._clear_last_error()
         axis_norm = axis.upper()
         if axis_norm == "Z":
             self._ensure_axis_ready(self.vertical_axis, "Vertical")
@@ -462,6 +480,7 @@ class DeviceController:
         # Clear stale stop flags from earlier errors before homing.
         self._stop_event.clear()
         self._ensure_motion_available(f"Axis {axis} home")
+        self._clear_last_error()
         axis_norm = axis.upper()
         self._log(f"[Axis {axis_norm}] homing (manual)")
         # Manual moves allowed even if a sequence is running.
@@ -494,6 +513,7 @@ class DeviceController:
         if self._sequence_thread and self._sequence_thread.is_alive():
             raise RuntimeError("Another operation is already running")
         self._ensure_motion_available("Initialize / homing")
+        self._clear_last_error()
 
         with self._state_lock:
             self.state.state = "RUNNING"
@@ -925,6 +945,14 @@ class DeviceController:
 
     def _ensure_manual_allowed(self) -> None:
         return
+
+    def _clear_last_error(self) -> None:
+        with self._state_lock:
+            if self.state.last_error is not None:
+                self.state.last_error = None
+                if self.state.state == "ERROR":
+                    self.state.state = "IDLE"
+        self._broadcast_status()
 
     def _ensure_motion_available(self, label: str) -> None:
         """
