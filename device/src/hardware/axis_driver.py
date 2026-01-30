@@ -80,6 +80,10 @@ class AxisDriver:
         with self._lock:
             self._pump = None
 
+    def _log(self, message: str) -> None:
+        # Keep logging consistent with other hardware classes
+        print(message)
+
     def stop_motion(self) -> bool:
         """
         Best-effort stop for an axis:
