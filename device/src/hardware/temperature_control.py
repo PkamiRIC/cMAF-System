@@ -46,16 +46,16 @@ class TemperatureController:
         self.set_enabled(False)
 
     def read_ready(self) -> Optional[bool]:
+        if plc:
+            val = safe_plc_call("digital_read", plc.digital_read, self.config.ready_pin)
+            if isinstance(val, int):
+                self.state.ready = bool(val)
+                return self.state.ready
         if self._gpio_ready_ok and GPIO is not None:
             try:
                 self.state.ready = bool(GPIO.input(self.config.ready_gpio_pin))
                 return self.state.ready
             except Exception:
                 self._gpio_ready_ok = False
-        if plc:
-            val = safe_plc_call("digital_read", plc.digital_read, self.config.ready_pin)
-            if isinstance(val, int):
-                self.state.ready = bool(val)
-                return self.state.ready
         self.state.ready = None
         return None
