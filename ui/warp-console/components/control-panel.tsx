@@ -98,7 +98,8 @@ export default function ControlPanel() {
   const togglePeristalticEnable = async () => {
     const desired = !peristalticEnabled
     try {
-      await post("/peristaltic/enable", { enabled: desired })
+      // UI reflects physical enable (Q0.0 high = ON); backend is inverted.
+      await post("/peristaltic/enable", { enabled: !desired })
       setPeristalticEnabled(desired)
       setError(null)
     } catch (err: any) {
@@ -285,7 +286,8 @@ export default function ControlPanel() {
             })
             setRelayStates(arr)
           }
-          setPeristalticEnabled(Boolean((data as any).peristaltic_enabled))
+          // Backend peristaltic_enabled is inverted vs physical Q0.0.
+          setPeristalticEnabled(!Boolean((data as any).peristaltic_enabled))
           setPeristalticDirection(Boolean((data as any).peristaltic_direction_cw))
           setPeristalticLowSpeed(Boolean((data as any).peristaltic_low_speed))
           setPidEnabled(Boolean((data as any).pid_enabled))
