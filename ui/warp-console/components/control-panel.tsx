@@ -623,8 +623,19 @@ export default function ControlPanel() {
 
         <div className="premium-card p-6 space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Temperature Control</h2>
-          <p className="text-sm text-muted-foreground">
-            Ready:{" "}
+          <p className="text-sm text-muted-foreground flex items-center gap-2">
+            Ready:
+            <span
+              className={`inline-block h-2.5 w-2.5 rounded-full border transition ${
+                tempReady === null
+                  ? "bg-muted border-border"
+                  : tempReady
+                  ? "bg-success border-success/60 shadow-sm shadow-success/40"
+                  : "bg-muted border-border"
+              }`}
+              aria-label={tempReady === null ? "Temperature ready unknown" : tempReady ? "Temperature ready" : "Temperature not ready"}
+              title={tempReady === null ? "N/A" : tempReady ? "Ready" : "Not ready"}
+            />
             <span
               className={
                 tempReady === null
