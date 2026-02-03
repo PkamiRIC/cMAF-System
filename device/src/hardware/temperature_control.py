@@ -51,8 +51,13 @@ class TemperatureController:
             if isinstance(val, int):
                 self.state.ready = bool(val)
                 return self.state.ready
-        if self._gpio_ready_ok and GPIO is not None:
+        if GPIO is not None:
             try:
+                if not self._gpio_ready_ok:
+                    if GPIO.getmode() is None:
+                        GPIO.setmode(GPIO.BCM)
+                    GPIO.setup(self.config.ready_gpio_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+                    self._gpio_ready_ok = True
                 self.state.ready = bool(GPIO.input(self.config.ready_gpio_pin))
                 return self.state.ready
             except Exception:
