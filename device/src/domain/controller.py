@@ -252,11 +252,7 @@ class DeviceController:
     def set_peristaltic_enabled(self, enabled: bool) -> None:
         self._ensure_manual_allowed()
         self._clear_last_error()
-        self._log(f"[Peristaltic] {'Enabled' if enabled else 'Disabled'}")
-        self._retry_void(
-            f"Peristaltic {'enable' if enabled else 'disable'}",
-            lambda: self.peristaltic.set_enabled(enabled),
-        )
+        self.peristaltic.set_enabled(enabled)
         with self._state_lock:
             self.state.peristaltic_enabled = self.peristaltic.state.enabled
         self._broadcast_status()
@@ -264,11 +260,7 @@ class DeviceController:
     def set_peristaltic_direction(self, forward: bool) -> None:
         self._ensure_manual_allowed()
         self._clear_last_error()
-        self._log(f"[Peristaltic] Direction {'CW' if forward else 'CCW'}")
-        self._retry_void(
-            f"Peristaltic direction {'CW' if forward else 'CCW'}",
-            lambda: self.peristaltic.set_direction(forward),
-        )
+        self.peristaltic.set_direction(forward)
         with self._state_lock:
             self.state.peristaltic_direction_cw = self.peristaltic.state.direction_forward
         self._broadcast_status()
@@ -276,11 +268,7 @@ class DeviceController:
     def set_peristaltic_speed(self, low_speed: bool) -> None:
         self._ensure_manual_allowed()
         self._clear_last_error()
-        self._log(f"[Peristaltic] Speed {'Low' if low_speed else 'High'}")
-        self._retry_void(
-            f"Peristaltic speed {'Low' if low_speed else 'High'}",
-            lambda: self.peristaltic.set_speed_checked(low_speed),
-        )
+        self.peristaltic.set_speed_checked(low_speed)
         with self._state_lock:
             self.state.peristaltic_low_speed = self.peristaltic.state.low_speed
         self._broadcast_status()
