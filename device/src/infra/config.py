@@ -89,7 +89,7 @@ class FlowSensorConfig:
 class TemperatureConfig:
     command_pin: str = "Q0.6"
     ready_pin: str = "I0.11"
-    ready_gpio_pin: int = 8
+    ready_gpio_pin: int = 4
 
 
 @dataclass

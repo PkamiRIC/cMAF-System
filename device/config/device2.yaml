@@ -42,7 +42,7 @@ flow_sensor:
 temperature:
   command_pin: "Q0.6"
   ready_pin: "I0.11"
-  ready_gpio_pin: 8
+  ready_gpio_pin: 4
 peristaltic:
   enable_pin: "Q0.0"
   dir_forward_pin: "Q0.1"
