@@ -606,14 +606,26 @@ class DeviceController:
                 self._execute_sequence(
                     lambda: run_maf_sampling_sequence(
                         stop_flag=self._stop_event.is_set,
+                        reset_flow_totals=self._flow_reset,
+                        start_flow_meter=self._flow_start,
+                        stop_flow_meter=self._flow_stop,
+                        get_total_volume_ml=self._flow_total_ml,
                         log=self._log,
                         relays=relay_adapter,
+                        motor_pump=self.peristaltic,
+                        pid_controller=self.pid_valve,
+                        home_pid_valve=self._pid_home,
                         syringe=syringe_adapter,
+                        enable_temp_controller=self._temp_enable,
+                        disable_temp_controller=self._temp_disable,
+                        wait_for_temp_ready=self._temp_wait_ready,
+                        wait_for_maf_heating=self._maf_wait_for_heating,
                         move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
+                        move_horizontal_to_waste=self._move_horizontal_preset("filter out"),
+                        move_horizontal_to_home=self._move_horizontal_preset("home"),
                         move_vertical_close_plate=self._move_vertical_preset("close"),
-                        select_rotary_port=self._select_rotary_port,
+                        move_vertical_open_plate=self._move_vertical_preset("open"),
                         before_step=self._before_step,
-                        init=self._run_homing,
                     )
                 )
             elif seq in {"sequence2", "seq2", "maf2"}:
