@@ -48,6 +48,11 @@ peristaltic:
   dir_forward_pin: "Q0.1"
   dir_reverse_pin: "Q0.2"
   speed_pin: "Q0.7"
+  dir_driver_port: "/dev/ttySC3"
+  dir_driver_address: 76
+  dir_driver_baudrate: 9600
+  dir_driver_parity: "N"
+  dir_driver_timeout: 0.3
 pid_valve:
   step_pin: "Q0.5"
   dir_pin: "Q0.4"

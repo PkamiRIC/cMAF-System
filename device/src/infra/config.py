@@ -59,6 +59,11 @@ class PeristalticConfig:
     dir_forward_pin: str = "Q0.1"
     dir_reverse_pin: str = "Q0.2"
     speed_pin: str = "Q0.7"
+    dir_driver_port: str = "/dev/ttySC3"
+    dir_driver_address: int = 76
+    dir_driver_baudrate: int = 9600
+    dir_driver_parity: str = "N"
+    dir_driver_timeout: float = 0.3
 
 
 @dataclass
