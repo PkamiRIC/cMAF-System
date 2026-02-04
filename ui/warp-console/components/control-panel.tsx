@@ -30,7 +30,12 @@ async function fetchStatus(): Promise<DeviceStatus> {
   return res.json()
 }
 
-export default function ControlPanel() {
+type ControlPanelProps = {
+  targetVolumeMl: number
+  setTargetVolumeMl: (value: number) => void
+}
+
+export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: ControlPanelProps) {
   const [verticalPos, setVerticalPos] = useState(0.0)
   const [verticalTarget, setVerticalTarget] = useState(25.0)
   const [verticalVelocity, setVerticalVelocity] = useState(0.25)
@@ -685,6 +690,17 @@ export default function ControlPanel() {
                 {flowRunning ? "ON" : "OFF"}
               </span>
             </div>
+          </div>
+          <div className="pt-2">
+            <label className="text-sm text-muted-foreground block mb-2">Target Volume (mL)</label>
+            <input
+              type="number"
+              value={targetVolumeMl}
+              onChange={(e) => setTargetVolumeMl(Math.max(0, Number.parseFloat(e.target.value) || 0))}
+              min="0"
+              step="0.1"
+              className="w-28 px-3 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+            />
           </div>
           <div className="grid grid-cols-3 gap-3 pt-2">
             <button

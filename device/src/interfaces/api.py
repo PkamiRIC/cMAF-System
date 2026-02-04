@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +45,10 @@ class TempEnable(BaseModel):
     enabled: bool
 
 
+class StartSequence(BaseModel):
+    target_volume_ml: Optional[float] = None
+
+
 def create_app(config: DeviceConfig, config_path: str):
     controller = DeviceController(config)
 
@@ -63,9 +67,10 @@ def create_app(config: DeviceConfig, config_path: str):
         return controller.get_status()
 
     @app.post("/command/start/{sequence_name}")
-    def start(sequence_name: str):
+    def start(sequence_name: str, payload: Optional[StartSequence] = None):
         try:
-            controller.start_sequence(sequence_name)
+            target_ml = payload.target_volume_ml if payload else None
+            controller.start_sequence(sequence_name, target_volume_ml=target_ml)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}

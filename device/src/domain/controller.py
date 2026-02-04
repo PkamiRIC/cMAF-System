@@ -50,6 +50,7 @@ class DeviceState:
     flow_running: bool = False
     temp_enabled: bool = False
     temp_ready: Optional[bool] = None
+    target_volume_ml: Optional[float] = None
 
 
 class DeviceController:
@@ -73,6 +74,7 @@ class DeviceController:
         self.state.temp_enabled = self.temperature.state.enabled
         self._stop_event = threading.Event()
         self._sequence_thread: Optional[threading.Thread] = None
+        self._sequence_target_volume_ml: Optional[float] = None
         self._state_lock = threading.Lock()
         self._log_lock = threading.Lock()
         self._log_buffer: list[str] = []
@@ -136,7 +138,7 @@ class DeviceController:
     # ---------------------------------------------------
     # COMMANDS
     # ---------------------------------------------------
-    def start_sequence(self, sequence_name: str) -> None:
+    def start_sequence(self, sequence_name: str, target_volume_ml: Optional[float] = None) -> None:
         if self._sequence_thread and self._sequence_thread.is_alive():
             raise RuntimeError("A sequence is already running")
         self._ensure_motion_available("Sequence start")
@@ -148,6 +150,8 @@ class DeviceController:
             self.state.last_error = None
             self.state.stop_requested = False
             self.state.sequence_step = None
+            self.state.target_volume_ml = target_volume_ml
+        self._sequence_target_volume_ml = target_volume_ml
         self._broadcast_status()
 
         self._stop_event.clear()
@@ -603,6 +607,11 @@ class DeviceController:
             syringe_adapter = _SyringeAdapter(self, self._stop_event)
             seq = sequence_name.lower()
             if seq in {"sequence1", "seq1", "maf", "maf1"}:
+                target_ml = (
+                    self._sequence_target_volume_ml
+                    if self._sequence_target_volume_ml is not None
+                    else 50.0
+                )
                 self._execute_sequence(
                     lambda: run_maf_sampling_sequence(
                         stop_flag=self._stop_event.is_set,
@@ -625,6 +634,7 @@ class DeviceController:
                         move_horizontal_to_home=self._move_horizontal_preset("home"),
                         move_vertical_close_plate=self._move_vertical_preset("close"),
                         move_vertical_open_plate=self._move_vertical_preset("open"),
+                        target_volume_ml=target_ml,
                         before_step=self._before_step,
                     )
                 )
@@ -674,6 +684,8 @@ class DeviceController:
                 self.state.current_sequence = None
                 self.state.sequence_step = None
                 self.state.stop_requested = False
+                self.state.target_volume_ml = None
+            self._sequence_target_volume_ml = None
             self._broadcast_status()
             self._stop_event.clear()
 

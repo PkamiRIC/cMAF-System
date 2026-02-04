@@ -26,12 +26,17 @@ export type DeviceStatus = {
   flow_running?: boolean
   temp_enabled?: boolean
   temp_ready?: boolean | null
+  target_volume_ml?: number | null
 }
 
 const apiBase = getApiBase()
 
-async function post(path: string) {
-  const res = await fetch(`${apiBase}${path}`, { method: "POST" })
+async function post(path: string, body?: any) {
+  const res = await fetch(`${apiBase}${path}`, {
+    method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
   if (!res.ok) {
     let detail = ""
     try {
@@ -48,7 +53,11 @@ async function fetchStatus(): Promise<DeviceStatus> {
   return res.json()
 }
 
-export default function StatusDisplay() {
+type StatusDisplayProps = {
+  targetVolumeMl: number
+}
+
+export default function StatusDisplay({ targetVolumeMl }: StatusDisplayProps) {
   const [status, setStatus] = useState<DeviceStatus>({})
   const [error, setError] = useState<string | null>(null)
   const activeSequence = useMemo<"seq1" | "seq2" | "clean" | null>(() => {
@@ -98,7 +107,8 @@ export default function StatusDisplay() {
   const handleStartSequence = async (seq: "seq1" | "seq2" | "clean") => {
     const name = seq === "seq2" ? "sequence2" : seq === "clean" ? "cleaning" : "sequence1"
     try {
-      await post(`/command/start/${name}`)
+      const payload = seq === "seq1" ? { target_volume_ml: targetVolumeMl } : undefined
+      await post(`/command/start/${name}`, payload)
     } catch (err: any) {
       setError(err?.message || "Start failed")
     }
