@@ -65,6 +65,7 @@ def run_sequence2(
             except Exception as exc:
                 ok = False
                 _log(f"[WARN] {step_label} failed: {exc}")
+                raise SequenceAbort
 
         if ok:
             _log(f"{step_label} completed")

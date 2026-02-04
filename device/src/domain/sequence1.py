@@ -114,6 +114,7 @@ def run_maf_sampling_sequence(
             except Exception as exc:
                 success = False
                 _log(f"[WARN] {step_label} failed: {exc}")
+                raise SequenceAbort
         if success:
             _log(f"{step_label} completed")
         _wait_block(max(wait_after, MIN_STEP_DELAY))

@@ -1034,12 +1034,24 @@ class _RelayAdapter:
     def on(self, channel: int) -> bool:
         if self.stop_event.is_set():
             raise RuntimeError("Operation stopped")
-        return self.controller._set_relay(channel, True, allow_when_running=True)
+        ok = self.controller._retry_bool(
+            f"Relay R{channel} ON (sequence)",
+            lambda: self.controller._set_relay(channel, True, allow_when_running=True),
+        )
+        if not ok:
+            raise RuntimeError(f"Relay R{channel} ON failed")
+        return ok
 
     def off(self, channel: int) -> bool:
         if self.stop_event.is_set():
             raise RuntimeError("Operation stopped")
-        return self.controller._set_relay(channel, False, allow_when_running=True)
+        ok = self.controller._retry_bool(
+            f"Relay R{channel} OFF (sequence)",
+            lambda: self.controller._set_relay(channel, False, allow_when_running=True),
+        )
+        if not ok:
+            raise RuntimeError(f"Relay R{channel} OFF failed")
+        return ok
 
 
 class _SyringeAdapter:
