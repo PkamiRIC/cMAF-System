@@ -102,6 +102,7 @@ class DeviceConfig:
     device_id: str = "device2"
     network: NetworkConfig = field(default_factory=NetworkConfig)
     relay: RelayConfig = field(default_factory=RelayConfig)
+    rotary_valve: RotaryValveConfig = field(default_factory=RotaryValveConfig)
     syringe: SyringeConfig = field(default_factory=SyringeConfig)
     vertical_axis: AxisConfig = field(default_factory=AxisConfig)
     horizontal_axis: AxisConfig = field(
@@ -130,6 +131,7 @@ def load_config(path: str) -> DeviceConfig:
         device_id=data.get("device_id", "device2"),
         network=NetworkConfig(**data.get("network", {})),
         relay=RelayConfig(**data.get("relay", {})),
+        rotary_valve=RotaryValveConfig(**data.get("rotary_valve", {})),
         syringe=SyringeConfig(**data.get("syringe", {})),
         vertical_axis=AxisConfig(**data.get("vertical_axis", {})),
         horizontal_axis=AxisConfig(**data.get("horizontal_axis", {})),

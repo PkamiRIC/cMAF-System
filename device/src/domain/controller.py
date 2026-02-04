@@ -12,28 +12,14 @@ from hardware.syringe_pump import SyringePump
 from hardware.axis_driver import AxisDriver
 from hardware.peristaltic_pump import PeristalticPump
 from hardware.pid_valve import PidValveController
+from hardware.rotary_valve import RotaryValve
 from hardware.flow_sensor import FlowSensor
 from hardware.temperature_control import TemperatureController
 from infra.config import DeviceConfig
 
-_OLD_CODES = Path(__file__).resolve().parents[2] / "Old_Codes"
-if str(_OLD_CODES) not in sys.path:
-    sys.path.append(str(_OLD_CODES))
-
-try:
-    from MAF_Sequence_v1 import run_maf_sequence as run_maf_sequence_v1  # type: ignore
-except Exception:
-    run_maf_sequence_v1 = None
-
-try:
-    from MAF_Sequence_2 import run_maf_sequence as run_maf_sequence_v2  # type: ignore
-except Exception:
-    run_maf_sequence_v2 = None
-
-try:
-    from Cleaning_Sequence import run_maf_cleaning_sequence  # type: ignore
-except Exception:
-    run_maf_cleaning_sequence = None
+from domain.sequence1 import run_maf_sampling_sequence
+from domain.sequence2 import run_sequence2
+from domain.cleaning_sequence import run_maf_cleaning_sequence
 
 
 @dataclass
@@ -74,6 +60,7 @@ class DeviceController:
         self.vertical_axis = AxisDriver(config.vertical_axis, "Vertical Axis")
         self.horizontal_axis = AxisDriver(config.horizontal_axis, "Horizontal Axis")
         self.peristaltic = PeristalticPump(config.peristaltic)
+        self.rotary_valve = RotaryValve(config.rotary_valve)
         self.flow_sensor = FlowSensor(config.flow_sensor)
         self.temperature = TemperatureController(config.temperature)
         self.pid_valve = PidValveController(config.pid_valve, self._read_flow_for_pid)
@@ -616,70 +603,35 @@ class DeviceController:
             syringe_adapter = _SyringeAdapter(self, self._stop_event)
             seq = sequence_name.lower()
             if seq in {"sequence1", "seq1", "maf", "maf1"}:
-                if run_maf_sequence_v1 is None:
-                    raise RuntimeError("Sequence 1 unavailable (MAF_Sequence_v1 not found)")
                 self._execute_sequence(
-                    lambda: run_maf_sequence_v1(
+                    lambda: run_maf_sampling_sequence(
                         stop_flag=self._stop_event.is_set,
-                        reset_flow_totals=self._flow_reset,
-                        start_flow_meter=self._flow_start,
-                        stop_flow_meter=self._flow_stop,
-                        get_total_volume_ml=self._flow_total_ml,
                         log=self._log,
                         relays=relay_adapter,
-                        motor_pump=self.peristaltic,
-                        pid_controller=self.pid_valve,
-                        home_pid_valve=self._pid_home,
-                        valve1=None,
-                        valve2=None,
                         syringe=syringe_adapter,
-                        enable_temp_controller=self._temp_enable,
-                        disable_temp_controller=self._temp_disable,
-                        wait_for_temp_ready=self._temp_wait_ready,
-                        wait_for_maf_heating=self._maf_wait_for_heating,
                         move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
-                        move_horizontal_to_waste=self._move_horizontal_preset("filter out"),
-                        move_horizontal_to_home=self._move_horizontal_preset("home"),
                         move_vertical_close_plate=self._move_vertical_preset("close"),
-                        move_vertical_open_plate=self._move_vertical_preset("open"),
+                        select_rotary_port=self._select_rotary_port,
                         before_step=self._before_step,
+                        init=self._run_homing,
                     )
                 )
             elif seq in {"sequence2", "seq2", "maf2"}:
-                if run_maf_sequence_v2 is None:
-                    raise RuntimeError("Sequence 2 unavailable (MAF_Sequence_2 not found)")
-                # Work around legacy module name mismatch
-                try:
-                    setattr(sys.modules.get("MAF_Sequence_2"), "reset_flow_totals", self._flow_reset)
-                except Exception:
-                    pass
                 self._execute_sequence(
-                    lambda: run_maf_sequence_v2(
+                    lambda: run_sequence2(
                         stop_flag=self._stop_event.is_set,
-                        reset_flow_and_timer=self._flow_reset,
-                        get_total_volume_ml=self._flow_total_ml,
                         log=self._log,
                         relays=relay_adapter,
-                        motor_pump=self.peristaltic,
-                        pid_controller=self.pid_valve,
-                        valve1=None,
-                        valve2=None,
                         syringe=syringe_adapter,
-                        enable_temp_controller=self._temp_enable,
-                        disable_temp_controller=self._temp_disable,
-                        wait_for_temp_ready=self._temp_wait_ready,
-                        wait_for_maf_heating=self._maf_wait_for_heating,
                         move_horizontal_to_filtering=self._move_horizontal_preset("filtering"),
-                        move_horizontal_to_waste=self._move_horizontal_preset("filter out"),
-                        move_horizontal_to_home=self._move_horizontal_preset("home"),
+                        move_horizontal_home=self._move_horizontal_preset("home"),
                         move_vertical_close_plate=self._move_vertical_preset("close"),
                         move_vertical_open_plate=self._move_vertical_preset("open"),
+                        select_rotary_port=self._select_rotary_port,
                         before_step=self._before_step,
                     )
                 )
             elif seq in {"cleaning", "clean", "cleaning_sequence"}:
-                if run_maf_cleaning_sequence is None:
-                    raise RuntimeError("Cleaning sequence unavailable (Cleaning_Sequence not found)")
                 self._execute_sequence(
                     lambda: run_maf_cleaning_sequence(
                         stop_flag=self._stop_event.is_set,
@@ -1031,6 +983,11 @@ class DeviceController:
                 self.vertical_axis.move_mm(clamped, rpm=0.25, stop_flag=self._stop_event.is_set)
 
         return _fn
+
+    def _select_rotary_port(self, port: int) -> None:
+        ok = self.rotary_valve.set_port(int(port))
+        if not ok:
+            raise RuntimeError(f"Rotary valve failed to set port {port}")
 
     def _ensure_axis_ready(self, driver: AxisDriver, label: str) -> None:
         if driver.ready:

@@ -7,6 +7,12 @@ relay:
   baudrate: 9600
   parity: "N"
   timeout: 0.3
+rotary_valve:
+  port: "/dev/ttySC3"
+  address: 1
+  baudrate: 9600
+  parity: "N"
+  timeout: 0.3
 syringe:
   port: "/dev/ttySC3"
   address: 76
