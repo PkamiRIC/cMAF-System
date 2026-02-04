@@ -537,7 +537,7 @@ export default function ControlPanel() {
           <p className="text-sm text-muted-foreground">
             Status:{" "}
             <span className={peristalticEnabled ? "text-success font-medium" : "text-muted-foreground"}>
-              {peristalticEnabled ? "Enabled" : "Disabled"}
+              {peristalticEnabled ? "Disabled" : "Enabled"}
             </span>
           </p>
           <div className="space-y-3">
@@ -545,7 +545,7 @@ export default function ControlPanel() {
               onClick={togglePeristalticEnable}
               className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-primary/20"
             >
-              {peristalticEnabled ? "Pump ON" : "Pump OFF"}
+              {peristalticEnabled ? "Pump OFF" : "Pump ON"}
             </button>
             <button
               onClick={togglePeristalticDirection}
