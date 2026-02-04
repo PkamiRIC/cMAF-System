@@ -88,9 +88,9 @@ class PeristalticPump:
                 ser.read(8)
 
     def set_enabled(self, enabled: bool) -> None:
-        # Enable pin is active-low in legacy wiring.
+        # Enable pin is active-high for current wiring.
         if plc:
-            safe_plc_call("digital_write", plc.digital_write, self.config.enable_pin, not enabled)
+            safe_plc_call("digital_write", plc.digital_write, self.config.enable_pin, enabled)
         self.state.enabled = bool(enabled)
 
     def set_direction(self, forward: bool) -> None:
