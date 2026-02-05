@@ -40,7 +40,7 @@ horizontal_axis:
   timeout: 1.0
   vertical_guard_mm: 10
 flow_sensor:
-  port: "/dev/ttyUSB0"
+  port: "/dev/ttyUSB1"
   medium: "water"
   interval_ms: 20
   scale_factor: 500.0
