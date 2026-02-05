@@ -541,8 +541,8 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
           <h2 className="text-lg font-semibold text-foreground">Peristaltic Pump</h2>
           <p className="text-sm text-muted-foreground">
             Status:{" "}
-            <span className={peristalticEnabled ? "text-success font-medium" : "text-muted-foreground"}>
-              {peristalticEnabled ? "Disabled" : "Enabled"}
+            <span className={peristalticEnabled ? "text-success font-medium" : "text-destructive font-medium"}>
+              {peristalticEnabled ? "Enabled" : "Disabled"}
             </span>
           </p>
           <div className="space-y-3">
