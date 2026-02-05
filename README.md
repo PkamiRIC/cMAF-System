@@ -119,6 +119,45 @@ sudo nmcli connection modify "CyRIC-INT" connection.autoconnect-priority 10
 nmcli connection delete "<UUID_OR_NAME_OF_OLD_DUPLICATE>"
 ```
 
+### Step 9.1 - Confirm Debian/Raspberry Pi OS version
+Run on the Pi:
+```
+cat /etc/os-release
+uname -a
+```
+
+### Step 9.2 - Ensure Ethernet auto-connect too
+Run on the Pi (adjust name if yours differs):
+```
+nmcli connection show
+sudo nmcli connection modify "Wired connection 1" connection.autoconnect yes
+sudo nmcli connection modify "Wired connection 1" connection.autoconnect-priority 20
+```
+Notes:
+- Ethernet typically uses DHCP by default (same as Wi‑Fi).
+- If you use a different wired profile name, replace it accordingly.
+
+### Step 9.3 - Install + enable Tailscale (remote access)
+Run on the Pi:
+```
+curl -fsSL https://tailscale.com/install.sh | sudo sh
+sudo systemctl enable --now tailscaled
+sudo tailscale up
+```
+If you want SSH over Tailscale:
+```
+sudo tailscale up --ssh
+```
+Check status:
+```
+tailscale status
+tailscale ip -4
+```
+(Might need to authorize via the owner tailscale account)
+Share the device using a link or email
+User must be logged in using Tailscale on pc or phone
+After sharing, ssh and realvnc are accessible using the Tailscale ip
+```
 ### Step 10 - Create venv and install backend dependencies
 Run on the Pi:
 ```
