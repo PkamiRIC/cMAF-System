@@ -153,11 +153,12 @@ Check status:
 tailscale status
 tailscale ip -4
 ```
-(Might need to authorize via the owner tailscale account)
-Share the device using a link or email
-User must be logged in using Tailscale on pc or phone
-After sharing, ssh and realvnc are accessible using the Tailscale ip
-```
+(Might need to authorize via the owner Tailscale account)
+
+Notes:
+- Share the device using a link or email.
+- User must be logged in using Tailscale on PC or phone.
+- After sharing, SSH and RealVNC are accessible using the Tailscale IP.
 ### Step 10 - Create venv and install backend dependencies
 Run on the Pi:
 ```
