@@ -135,7 +135,7 @@ def run_maf_sampling_sequence(
             _wait_block(0.2)
 
     def _enable_peristaltic():
-        motor_pump.set_direction(True)
+        motor_pump.set_direction(False)
         motor_pump.set_speed_checked(True)
         motor_pump.set_enabled(True)
 
