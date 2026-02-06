@@ -75,6 +75,8 @@ class DeviceController:
         self._stop_event = threading.Event()
         self._sequence_thread: Optional[threading.Thread] = None
         self._sequence_target_volume_ml: Optional[float] = None
+        self._last_stop_request_at: Optional[float] = None
+        self._sequence_stop_timeout_s = 5.0
         self._state_lock = threading.Lock()
         self._log_lock = threading.Lock()
         self._log_buffer: list[str] = []
@@ -140,7 +142,10 @@ class DeviceController:
     # ---------------------------------------------------
     def start_sequence(self, sequence_name: str, target_volume_ml: Optional[float] = None) -> None:
         if self._sequence_thread and self._sequence_thread.is_alive():
-            raise RuntimeError("A sequence is already running")
+            if self._maybe_force_detach_sequence():
+                pass
+            else:
+                raise RuntimeError("A sequence is already running")
         self._ensure_motion_available("Sequence start")
         self._clear_last_error()
 
@@ -162,6 +167,7 @@ class DeviceController:
 
     def stop_sequence(self) -> None:
         self._stop_event.set()
+        self._last_stop_request_at = time.time()
         with self._state_lock:
             self.state.stop_requested = True
             self.state.state = "ERROR"
@@ -169,6 +175,12 @@ class DeviceController:
             self.state.current_sequence = None
             self.state.sequence_step = None
         self._broadcast_status()
+        # Best-effort: give the sequence thread a chance to exit.
+        if self._sequence_thread and self._sequence_thread.is_alive():
+            self._sequence_thread.join(timeout=self._sequence_stop_timeout_s)
+            if self._sequence_thread.is_alive():
+                self._log("[WARN] Sequence thread did not exit; forcing detach")
+                self._sequence_thread = None
 
     def emergency_stop(self) -> None:
         self.stop_sequence()
@@ -495,7 +507,10 @@ class DeviceController:
         runs in a background thread so it can be stopped.
         """
         if self._sequence_thread and self._sequence_thread.is_alive():
-            raise RuntimeError("Another operation is already running")
+            if self._maybe_force_detach_sequence():
+                pass
+            else:
+                raise RuntimeError("Another operation is already running")
         self._ensure_motion_available("Initialize / homing")
         self._clear_last_error()
 
@@ -1035,6 +1050,21 @@ class DeviceController:
                 self._loop.call_soon_threadsafe(q.put_nowait, payload)
             except Exception:
                 continue
+
+    def _maybe_force_detach_sequence(self) -> bool:
+        """
+        If a stop was requested and the sequence thread did not exit,
+        allow new operations after a timeout by detaching the thread handle.
+        """
+        if not self._sequence_thread or not self._sequence_thread.is_alive():
+            return False
+        if self._last_stop_request_at is None:
+            return False
+        if (time.time() - self._last_stop_request_at) < self._sequence_stop_timeout_s:
+            return False
+        self._log("[WARN] Forcing sequence detach after stop timeout")
+        self._sequence_thread = None
+        return True
 
 class _RelayAdapter:
     """Adapter used by sequences to update relay cache while allowing runs."""
