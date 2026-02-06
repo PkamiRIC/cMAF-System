@@ -29,6 +29,7 @@ class FlowSensor:
                 interval_ms=config.interval_ms,
                 scale_factor=config.scale_factor,
                 stale_restart_limit=config.stale_restart_limit,
+                stale_seconds=config.stale_seconds,
                 auto_start=False,
             )
         except Exception:

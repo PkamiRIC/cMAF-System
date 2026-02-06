@@ -88,6 +88,7 @@ class FlowSensorConfig:
     interval_ms: int = 20
     scale_factor: float = 500.0
     stale_restart_limit: int = 20
+    stale_seconds: float = 2.0
 
 
 @dataclass
