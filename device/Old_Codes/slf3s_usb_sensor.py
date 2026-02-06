@@ -133,6 +133,7 @@ class SLF3SUSBFlowSensor:
         parameter: Optional[bytes] = None,
         scale_factor: Optional[float] = None,
         stale_restart_limit: int = 8,
+        stale_seconds: float = 2.0,
         auto_start: bool = True,
     ) -> None:
         self.port = port
@@ -143,6 +144,7 @@ class SLF3SUSBFlowSensor:
         self.configuration_word = configuration_word
         self.parameter = parameter
         self.stale_restart_limit = max(1, stale_restart_limit)
+        self.stale_seconds = max(0.2, float(stale_seconds))
 
         if measurement_command is None:
             self.measurement_command = self._command_for_medium(medium)
@@ -177,6 +179,7 @@ class SLF3SUSBFlowSensor:
         self._total_liters: float = 0.0
         self._last_ticks: Optional[int] = None
         self._stale_count = 0
+        self._last_ticks_change_time: Optional[float] = None
 
         if auto_start:
             self.start()
@@ -198,9 +201,10 @@ class SLF3SUSBFlowSensor:
             payload += struct.pack(">H", self.configuration_word)
         self._send_command(_CMD_START_CONTINUOUS, payload)
         self._running = True
-        self._last_sample_time = None
+        # Preserve integration timing across restarts.
         self._last_ticks = None
         self._stale_count = 0
+        self._last_ticks_change_time = None
 
     def stop(self) -> None:
         """Stop continuous measurement if currently running."""
@@ -232,17 +236,19 @@ class SLF3SUSBFlowSensor:
 
     def read(self) -> Dict[str, float]:
         """Return a dict with flow+total fields expected by legacy panels."""
-        flow_ml_min = self.read_flow_ml_min()
-        flow_ml_min = 0.0 if flow_ml_min is None else float(flow_ml_min)
-        flow_l_min = flow_ml_min / 1000.0
-        flow_ul_min = flow_ml_min * 1000.0
+        flow_ml_min_opt = self.read_flow_ml_min()
 
         now = time.time()
         if self._last_sample_time is None:
             self._last_sample_time = now
         dt = max(0.0, now - self._last_sample_time)
         self._last_sample_time = now
-        self._total_liters += (flow_l_min / 60.0) * dt
+        flow_ml_min = 0.0 if flow_ml_min_opt is None else float(flow_ml_min_opt)
+        flow_l_min = flow_ml_min / 1000.0
+        flow_ul_min = flow_ml_min * 1000.0
+
+        if flow_ml_min_opt is not None:
+            self._total_liters += ((float(flow_ml_min_opt) / 1000.0) / 60.0) * dt
         total_ul = self._total_liters * 1_000_000.0
 
         return {
@@ -312,25 +318,33 @@ class SLF3SUSBFlowSensor:
             if ticks is None:
                 return None
 
+            now = time.time()
+
             if ticks == self._last_ticks:
                 self._stale_count += 1
-                if self._stale_count >= self.stale_restart_limit:
+                if self._last_ticks_change_time is None:
+                    self._last_ticks_change_time = now
+
+                if (now - self._last_ticks_change_time) >= self.stale_seconds:
                     LOGGER.warning(
-                        "Flow stayed at %s ticks for %d polls → restart",
+                        "Flow stayed at %s ticks for %.3fs → restart",
                         ticks,
-                        self.stale_restart_limit,
+                        (now - self._last_ticks_change_time),
                     )
                     self._restart_stream()
                     continue
             else:
                 self._stale_count = 0
                 self._last_ticks = ticks
+                self._last_ticks_change_time = now
             return ticks
 
     def _restart_stream(self) -> None:
+        saved_last_sample_time = self._last_sample_time
         self._ensure_stopped()
         time.sleep(0.05)
         self.start()
+        self._last_sample_time = saved_last_sample_time
 
     def _ensure_stopped(self) -> None:
         if not self._running:
