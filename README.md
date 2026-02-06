@@ -194,12 +194,31 @@ Run on the Pi:
 cd ~/cMAF-System/device/config
 cp device3.yaml device2.yaml
 ```
+### Step 11.1 - Create stable flow meter device name (prevents ttyUSB0/ttyUSB1 flips)
+Run on the Pi:
+```
+# Find USB ID for the SCC1 cable (run with current ttyUSB0/ttyUSB1)
+udevadm info -a -n /dev/ttyUSB0 | grep -m1 -E 'idVendor|idProduct|serial'
+
+# Create udev rule for a stable name
+sudo tee /etc/udev/rules.d/99-scc1.rules >/dev/null <<'EOF'
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", SYMLINK+="ttySCC1"
+EOF
+
+# Reload rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+Verify:
+```
+ls -l /dev/ttySCC1
+```
 Edit `device2.yaml` and set:
 - `device_id: "device2"`
 - `network.api_port: 8002`
 - `relay.address: 1`
 - `vertical_axis` min/max to 0..25
-- `flow_sensor.port: /dev/ttyUSB0`
+- `flow_sensor.port: /dev/ttySCC1`
 - `temperature` pins (Q0.6/I0.11/8)
 
 ### Step 12 - Create backend systemd service
