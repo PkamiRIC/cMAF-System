@@ -144,6 +144,16 @@ def run_maf_sampling_sequence(
         motor_pump.set_direction(False)
         motor_pump.set_speed_checked(False)
 
+    def _stop_flow_meter_safe():
+        for attempt in range(1, 4):
+            try:
+                stop_flow_meter()
+                return
+            except Exception as exc:
+                _log(f"[WARN] Stop flow meter failed (attempt {attempt}/3): {exc}")
+                _wait_block(0.2)
+        _log("[WARN] Stop flow meter failed after retries; continuing sequence")
+
     def _syringe_move(target_ml: float, flow_ml_min: float):
         if syringe is None:
             raise RuntimeError("Syringe adapter unavailable")
@@ -179,7 +189,7 @@ def run_maf_sampling_sequence(
             f"Step 15: Run pump until total volume >= {target_volume_ml:.1f} mL",
             _volume_loop,
         )
-        _run_step("Step 16: Stop flow meter readings", stop_flow_meter, wait_after=0.5)
+        _run_step("Step 16: Stop flow meter readings", _stop_flow_meter_safe, wait_after=0.5)
         _run_step(
             f"Step 17: Hold for {post_volume_wait_s:.1f}s after reaching target volume",
             wait_after=post_volume_wait_s,
