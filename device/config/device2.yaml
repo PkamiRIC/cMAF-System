@@ -17,7 +17,7 @@ syringe:
   port: "/dev/ttySC3"
   address: 76
   baudrate: 9600
-  steps_per_ml: 8000000
+  steps_per_ml: 7804878
   velocity_calib: 8000
   timeout: 1.0
 vertical_axis:
