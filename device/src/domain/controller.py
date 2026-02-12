@@ -329,6 +329,7 @@ class DeviceController:
         self._broadcast_status()
 
     def flow_start(self) -> None:
+        self._ensure_manual_allowed()
         self._clear_last_error()
         self.flow_sensor.start()
         with self._state_lock:
@@ -337,6 +338,7 @@ class DeviceController:
         self._broadcast_status()
 
     def flow_stop(self) -> None:
+        self._ensure_manual_allowed()
         self._clear_last_error()
         self.flow_sensor.stop()
         with self._state_lock:
@@ -345,6 +347,7 @@ class DeviceController:
         self._broadcast_status()
 
     def flow_reset(self) -> None:
+        self._ensure_manual_allowed()
         self._clear_last_error()
         self.flow_sensor.reset_totals()
         with self._state_lock:
@@ -1002,7 +1005,12 @@ class DeviceController:
         return ok
 
     def _ensure_manual_allowed(self) -> None:
-        return
+        with self._state_lock:
+            running = self.state.state == "RUNNING"
+            current = self.state.current_sequence
+        if running:
+            op = current or "operation"
+            raise RuntimeError(f"Manual command blocked while '{op}' is running")
 
     def _clear_last_error(self) -> None:
         with self._state_lock:
