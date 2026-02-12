@@ -656,6 +656,11 @@ class DeviceController:
                         move_vertical_close_plate=self._move_vertical_preset("close"),
                         move_vertical_open_plate=self._move_vertical_preset("open"),
                         target_volume_ml=target_ml,
+                        post_volume_wait_s=self.config.sequence1.post_volume_wait_s,
+                        early_complete_ratio=self.config.sequence1.early_complete_ratio,
+                        early_complete_wait_s=self.config.sequence1.early_complete_wait_s,
+                        stagnant_timeout_s=self.config.sequence1.stagnant_timeout_s,
+                        stagnant_epsilon_ml=self.config.sequence1.stagnant_epsilon_ml,
                         before_step=self._before_step,
                     )
                 )

@@ -45,6 +45,12 @@ flow_sensor:
   interval_ms: 20
   scale_factor: 500.0
   stale_restart_limit: 20
+sequence1:
+  post_volume_wait_s: 2.0
+  early_complete_ratio: 0.925
+  early_complete_wait_s: 10.0
+  stagnant_timeout_s: 20.0
+  stagnant_epsilon_ml: 0.001
 temperature:
   command_pin: "Q0.6"
   ready_pin: "I0.11"

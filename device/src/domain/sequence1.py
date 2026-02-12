@@ -1,4 +1,5 @@
 from typing import Callable, Optional
+import time
 
 from domain.sleeper import InterruptibleSleeper
 
@@ -27,6 +28,10 @@ def run_maf_sampling_sequence(
     move_vertical_open_plate: Optional[Callable[[], None]] = None,
     target_volume_ml: float = 50.0,
     post_volume_wait_s: float = 2.0,
+    early_complete_ratio: float = 0.925,
+    early_complete_wait_s: float = 10.0,
+    stagnant_timeout_s: float = 20.0,
+    stagnant_epsilon_ml: float = 0.001,
     before_step: Optional[Callable[[str], None]] = None,
 ):
     """
@@ -121,6 +126,10 @@ def run_maf_sampling_sequence(
         _wait_block(POST_COMMAND_DELAY)
 
     def _volume_loop():
+        early_threshold_ml = float(target_volume_ml) * early_complete_ratio
+        last_total: Optional[float] = None
+        stagnant_since: Optional[float] = None
+
         while True:
             if stop_flag():
                 check_stop()
@@ -130,6 +139,32 @@ def run_maf_sampling_sequence(
             except Exception:
                 total = 0.0
             _log(f"  [Flow] Total volume = {total:.2f} mL")
+
+            # Contingency 1: if we reach 92.5% of target, hold 10s and continue.
+            if total >= early_threshold_ml:
+                _log(
+                    f"  [Flow] Reached {early_complete_ratio * 100:.1f}% of target "
+                    f"({total:.2f}/{target_volume_ml:.2f} mL). Holding {early_complete_wait_s:.0f}s."
+                )
+                _wait_block(early_complete_wait_s)
+                break
+
+            # Contingency 2: if total volume is stagnant for >20s, continue.
+            now = time.monotonic()
+            if last_total is None or abs(total - last_total) > stagnant_epsilon_ml:
+                last_total = total
+                stagnant_since = now
+            else:
+                if stagnant_since is None:
+                    stagnant_since = now
+                stagnant_for = now - stagnant_since
+                if stagnant_for >= stagnant_timeout_s:
+                    _log(
+                        f"  [Flow] Total volume unchanged for {stagnant_timeout_s:.0f}s "
+                        f"at {total:.2f} mL. Proceeding to next step."
+                    )
+                    break
+
             if total >= target_volume_ml:
                 break
             _wait_block(0.2)
@@ -186,7 +221,10 @@ def run_maf_sampling_sequence(
         _run_step("Step 13: PID enable", lambda: pid_controller.set_enabled(True))
         _run_step("Step 14: Start reading flow sensor / volume", start_flow_meter)
         _run_step(
-            f"Step 15: Run pump until total volume >= {target_volume_ml:.1f} mL",
+            (
+                f"Step 15: Run pump until target reached "
+                f"(or >=92.5% +10s hold, or no flow change for 20s)"
+            ),
             _volume_loop,
         )
         _run_step("Step 16: Stop flow meter readings", _stop_flow_meter_safe, wait_after=0.5)

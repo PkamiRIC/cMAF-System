@@ -92,6 +92,15 @@ class FlowSensorConfig:
 
 
 @dataclass
+class Sequence1Config:
+    post_volume_wait_s: float = 2.0
+    early_complete_ratio: float = 0.925
+    early_complete_wait_s: float = 10.0
+    stagnant_timeout_s: float = 20.0
+    stagnant_epsilon_ml: float = 0.001
+
+
+@dataclass
 class TemperatureConfig:
     command_pin: str = "Q0.6"
     ready_pin: str = "I0.11"
@@ -112,6 +121,7 @@ class DeviceConfig:
     peristaltic: PeristalticConfig = field(default_factory=PeristalticConfig)
     pid_valve: PidValveConfig = field(default_factory=PidValveConfig)
     flow_sensor: FlowSensorConfig = field(default_factory=FlowSensorConfig)
+    sequence1: Sequence1Config = field(default_factory=Sequence1Config)
     temperature: TemperatureConfig = field(default_factory=TemperatureConfig)
 
 
@@ -139,5 +149,6 @@ def load_config(path: str) -> DeviceConfig:
         peristaltic=PeristalticConfig(**data.get("peristaltic", {})),
         pid_valve=PidValveConfig(**data.get("pid_valve", {})),
         flow_sensor=FlowSensorConfig(**data.get("flow_sensor", {})),
+        sequence1=Sequence1Config(**data.get("sequence1", {})),
         temperature=TemperatureConfig(**data.get("temperature", {})),
     )
