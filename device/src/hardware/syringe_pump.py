@@ -2,31 +2,18 @@ import struct
 import os
 import time
 from typing import Optional, Callable
-import threading
 import serial
 
 from infra.config import SyringeConfig, AxisConfig
+from hardware.serial_port_lock import get_port_lock
 
 
 class SyringePump:
-    # One lock per serial port path (e.g. /dev/ttyUSB0)
-    _port_locks: dict[str, threading.Lock] = {}
-    _port_locks_guard = threading.Lock()
-
     def __init__(self, config: SyringeConfig | AxisConfig) -> None:
         self.config = config
         self.target_position = 0
         self._debug_hex = os.getenv("WARP_HEX_LOG", "").strip() in {"1", "true", "TRUE", "yes", "YES"}
         self._debug_poll = os.getenv("WARP_HEX_POLL", "").strip() in {"1", "true", "TRUE", "yes", "YES"}
-
-    def _port_lock(self) -> threading.Lock:
-        key = str(self.config.port)
-        with self._port_locks_guard:
-            lock = self._port_locks.get(key)
-            if lock is None:
-                lock = threading.Lock()
-                self._port_locks[key] = lock
-            return lock
 
     def _open_serial(self, timeout: Optional[float] = None) -> serial.Serial:
         ser = serial.Serial(
@@ -109,7 +96,7 @@ class SyringePump:
 
     def _send_command(self, command: bytes) -> bytes:
         # IMPORTANT: lock serial port access to prevent concurrent poll/write collisions
-        with self._port_lock():
+        with get_port_lock(self.config.port):
             with self._open_serial(timeout=0.5) as ser:
                 ser.reset_input_buffer()
                 ser.reset_output_buffer()
@@ -181,7 +168,7 @@ class SyringePump:
         )
         ctrl.extend(self._crc16(ctrl))
         try:
-            with self._port_lock():
+            with get_port_lock(self.config.port):
                 with self._open_serial(timeout=0.5) as ser:
                     ser.reset_input_buffer()
                     ser.reset_output_buffer()
@@ -230,7 +217,7 @@ class SyringePump:
         frame.extend(self._crc16(frame))
 
         try:
-            with self._port_lock():
+            with get_port_lock(self.config.port):
                 with self._open_serial(timeout=0.5) as ser:
                     ser.reset_input_buffer()
                     ser.reset_output_buffer()
@@ -265,7 +252,7 @@ class SyringePump:
             tries += 1
             try:
                 # IMPORTANT: lock serial port access to prevent concurrent poll/write collisions
-                with self._port_lock():
+                with get_port_lock(self.config.port):
                     with self._open_serial(timeout=2.0) as ser:
                         ser.reset_input_buffer()
                         ser.reset_output_buffer()
@@ -408,7 +395,7 @@ class SyringePump:
 
         try:
             # IMPORTANT: lock serial port access to prevent concurrent poll/write collisions
-            with self._port_lock():
+            with get_port_lock(self.config.port):
                 with self._open_serial(timeout=1.0) as ser:
                     ser.reset_input_buffer()
                     ser.reset_output_buffer()

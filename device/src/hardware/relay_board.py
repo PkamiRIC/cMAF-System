@@ -2,6 +2,7 @@ import struct
 import serial
 
 from infra.config import RelayConfig
+from hardware.serial_port_lock import get_port_lock
 
 
 class RelayBoard:
@@ -49,12 +50,13 @@ class RelayBoard:
     def _write_frame(self, pdu: bytes, expected_len: int = 8) -> bool:
         """Send a pre-built PDU with CRC and validate the echo."""
         frame = pdu + self._crc16_modbus(pdu)
-        with self._open() as serial_port:
-            serial_port.reset_input_buffer()
-            serial_port.reset_output_buffer()
-            serial_port.write(frame)
-            resp = serial_port.read(expected_len)
-            return len(resp) == expected_len and resp[: len(pdu)] == pdu
+        with get_port_lock(self.config.port):
+            with self._open() as serial_port:
+                serial_port.reset_input_buffer()
+                serial_port.reset_output_buffer()
+                serial_port.write(frame)
+                resp = serial_port.read(expected_len)
+                return len(resp) == expected_len and resp[: len(pdu)] == pdu
 
     def on(self, relay_num: int) -> bool:
         if not (1 <= relay_num <= 8):

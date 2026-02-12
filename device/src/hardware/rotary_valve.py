@@ -2,6 +2,7 @@ import struct
 import serial
 
 from infra.config import RotaryValveConfig
+from hardware.serial_port_lock import get_port_lock
 
 
 class RotaryValve:
@@ -45,12 +46,13 @@ class RotaryValve:
         hi_v, lo_v = (value >> 8) & 0xFF, value & 0xFF
         pdu = bytes([self.config.address, 0x06, hi_r, lo_r, hi_v, lo_v])
         frame = pdu + self._crc16(pdu)
-        with self._open() as serial_port:
-            serial_port.reset_input_buffer()
-            serial_port.reset_output_buffer()
-            serial_port.write(frame)
-            ack = serial_port.read(8)  # echo for 0x06
-            return len(ack) == 8 and ack[:6] == pdu
+        with get_port_lock(self.config.port):
+            with self._open() as serial_port:
+                serial_port.reset_input_buffer()
+                serial_port.reset_output_buffer()
+                serial_port.write(frame)
+                ack = serial_port.read(8)  # echo for 0x06
+                return len(ack) == 8 and ack[:6] == pdu
 
     def set_port(self, port_num: int) -> bool:
         """

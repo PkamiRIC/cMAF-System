@@ -856,6 +856,7 @@ class DeviceController:
         try:
             self._log("[Init] Initialization begins")
             self._check_stop()
+            self._run_initialize_relay_sequence()
             self._prepare_outputs_for_homing()
 
             self._before_step("Homing vertical axis")
@@ -895,6 +896,40 @@ class DeviceController:
                 self.state.stop_requested = False
             self._broadcast_status()
             self._stop_event.clear()
+
+    def _run_initialize_relay_sequence(self) -> None:
+        """
+        Custom pre-initialize relay sequence requested for startup safety:
+        1) Relay 6 OFF
+        2) Relay 7 OFF
+        3) Wait 4 seconds
+        4) Relay 5 OFF
+        """
+        self._before_step("Initialize relays: R6 OFF, R7 OFF, wait 4s, then R5 OFF")
+
+        for ch in (6, 7):
+            self._check_stop()
+            ok = self._retry_bool(
+                f"Relay R{ch} OFF (init)",
+                lambda ch=ch: self._set_relay(ch, False, allow_when_running=True),
+            )
+            if not ok:
+                raise RuntimeError(f"Relay R{ch} OFF failed during initialize")
+
+        hold_s = 4.0
+        self._append_log(f"[Init] Holding {hold_s:.1f}s before turning R5 OFF")
+        end = time.time() + hold_s
+        while time.time() < end:
+            self._check_stop()
+            time.sleep(0.1)
+
+        self._check_stop()
+        ok = self._retry_bool(
+            "Relay R5 OFF (init)",
+            lambda: self._set_relay(5, False, allow_when_running=True),
+        )
+        if not ok:
+            raise RuntimeError("Relay R5 OFF failed during initialize")
 
     def _home_vertical_axis(self) -> None:
         if not self.vertical_axis.ready:
