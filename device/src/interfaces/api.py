@@ -214,17 +214,26 @@ def create_app(config: DeviceConfig, config_path: str):
 
     @app.post("/flow/start")
     def flow_start():
-        controller.flow_start()
+        try:
+            controller.flow_start()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
 
     @app.post("/flow/stop")
     def flow_stop():
-        controller.flow_stop()
+        try:
+            controller.flow_stop()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
 
     @app.post("/flow/reset")
     def flow_reset():
-        controller.flow_reset()
+        try:
+            controller.flow_reset()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
 
     @app.post("/temperature/enable")

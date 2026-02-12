@@ -74,6 +74,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
   const [flowMlMin, setFlowMlMin] = useState(0.0)
   const [totalMl, setTotalMl] = useState(0.0)
   const [flowRunning, setFlowRunning] = useState(false)
+  const [flowError, setFlowError] = useState<string | null>(null)
   const [tempEnabled, setTempEnabled] = useState(false)
   const [tempReady, setTempReady] = useState<boolean | null>(null)
 
@@ -174,7 +175,15 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
   const flowStart = async () => {
     try {
       await post("/flow/start")
-      setFlowRunning(true)
+      const data = await fetchStatus()
+      setFlowRunning(Boolean((data as any).flow_running))
+      if (typeof (data as any).flow_ml_min === "number") {
+        setFlowMlMin(Number((data as any).flow_ml_min))
+      }
+      if (typeof (data as any).total_ml === "number") {
+        setTotalMl(Number((data as any).total_ml))
+      }
+      setFlowError(typeof (data as any).flow_error === "string" ? String((data as any).flow_error) : null)
       setError(null)
     } catch (err: any) {
       setError(err?.message || "Flow start failed")
@@ -184,7 +193,15 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
   const flowStop = async () => {
     try {
       await post("/flow/stop")
-      setFlowRunning(false)
+      const data = await fetchStatus()
+      setFlowRunning(Boolean((data as any).flow_running))
+      if (typeof (data as any).flow_ml_min === "number") {
+        setFlowMlMin(Number((data as any).flow_ml_min))
+      }
+      if (typeof (data as any).total_ml === "number") {
+        setTotalMl(Number((data as any).total_ml))
+      }
+      setFlowError(typeof (data as any).flow_error === "string" ? String((data as any).flow_error) : null)
       setError(null)
     } catch (err: any) {
       setError(err?.message || "Flow stop failed")
@@ -194,7 +211,17 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
   const flowReset = async () => {
     try {
       await post("/flow/reset")
-      setTotalMl(0)
+      const data = await fetchStatus()
+      if (typeof (data as any).flow_ml_min === "number") {
+        setFlowMlMin(Number((data as any).flow_ml_min))
+      }
+      if (typeof (data as any).total_ml === "number") {
+        setTotalMl(Number((data as any).total_ml))
+      } else {
+        setTotalMl(0)
+      }
+      setFlowRunning(Boolean((data as any).flow_running))
+      setFlowError(typeof (data as any).flow_error === "string" ? String((data as any).flow_error) : null)
       setError(null)
     } catch (err: any) {
       setError(err?.message || "Flow reset failed")
@@ -307,6 +334,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
             setTotalMl(Number((data as any).total_ml))
           }
           setFlowRunning(Boolean((data as any).flow_running))
+          setFlowError(typeof (data as any).flow_error === "string" ? String((data as any).flow_error) : null)
           setTempEnabled(Boolean((data as any).temp_enabled))
           if (typeof (data as any).temp_ready === "boolean") {
             setTempReady(Boolean((data as any).temp_ready))
@@ -722,6 +750,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
               Reset
             </button>
           </div>
+          {flowError && <div className="text-xs text-destructive font-semibold">{flowError}</div>}
         </div>
       </div>
     </div>

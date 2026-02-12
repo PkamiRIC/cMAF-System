@@ -48,6 +48,7 @@ class DeviceState:
     flow_ml_min: float = 0.0
     total_ml: float = 0.0
     flow_running: bool = False
+    flow_error: Optional[str] = None
     temp_enabled: bool = False
     temp_ready: Optional[bool] = None
     target_volume_ml: Optional[float] = None
@@ -120,6 +121,7 @@ class DeviceController:
             self.state.flow_ml_min = float(flow.get("flow_ml_min", 0.0))
             self.state.total_ml = float(flow.get("total_ml", 0.0))
             self.state.flow_running = self.flow_sensor.is_running()
+            self.state.flow_error = self.flow_sensor.get_last_error()
             self.state.temp_ready = self.temperature.read_ready()
             self.state.temp_enabled = self.temperature.state.enabled
             self.state.peristaltic_enabled = self.peristaltic.state.enabled
@@ -331,6 +333,7 @@ class DeviceController:
         self.flow_sensor.start()
         with self._state_lock:
             self.state.flow_running = self.flow_sensor.is_running()
+            self.state.flow_error = self.flow_sensor.get_last_error()
         self._broadcast_status()
 
     def flow_stop(self) -> None:
@@ -338,11 +341,14 @@ class DeviceController:
         self.flow_sensor.stop()
         with self._state_lock:
             self.state.flow_running = self.flow_sensor.is_running()
+            self.state.flow_error = self.flow_sensor.get_last_error()
         self._broadcast_status()
 
     def flow_reset(self) -> None:
         self._clear_last_error()
         self.flow_sensor.reset_totals()
+        with self._state_lock:
+            self.state.flow_error = self.flow_sensor.get_last_error()
         self._broadcast_status()
 
     def move_syringe(self, volume_ml: float, flow_ml_min: float) -> None:
