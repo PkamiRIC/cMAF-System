@@ -907,7 +907,9 @@ class DeviceController:
         """
         self._before_step("Initialize relays: R6 OFF, R7 OFF, wait 4s, then R5 OFF")
 
-        for ch in (6, 7):
+        relay_gap_s = 0.15
+
+        for idx, ch in enumerate((6, 7)):
             self._check_stop()
             ok = self._retry_bool(
                 f"Relay R{ch} OFF (init)",
@@ -915,6 +917,12 @@ class DeviceController:
             )
             if not ok:
                 raise RuntimeError(f"Relay R{ch} OFF failed during initialize")
+            # Small settle time between back-to-back relay writes on shared RS485.
+            if idx < 1:
+                end_gap = time.time() + relay_gap_s
+                while time.time() < end_gap:
+                    self._check_stop()
+                    time.sleep(0.02)
 
         hold_s = 4.0
         self._append_log(f"[Init] Holding {hold_s:.1f}s before turning R5 OFF")
@@ -922,6 +930,12 @@ class DeviceController:
         while time.time() < end:
             self._check_stop()
             time.sleep(0.1)
+
+        self._check_stop()
+        end_gap = time.time() + relay_gap_s
+        while time.time() < end_gap:
+            self._check_stop()
+            time.sleep(0.02)
 
         self._check_stop()
         ok = self._retry_bool(
