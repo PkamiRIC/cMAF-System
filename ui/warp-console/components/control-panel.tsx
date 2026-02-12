@@ -78,6 +78,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
   const [tempEnabled, setTempEnabled] = useState(false)
   const [tempReady, setTempReady] = useState<boolean | null>(null)
   const [tempTargetC, setTempTargetC] = useState(58.0)
+  const [tempTargetEditing, setTempTargetEditing] = useState(false)
   const [tempCurrentC, setTempCurrentC] = useState<number | null>(null)
   const [tempError, setTempError] = useState<string | null>(null)
 
@@ -236,7 +237,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
       await post("/temperature/enable", { enabled })
       const data = await fetchStatus()
       setTempEnabled(Boolean((data as any).temp_enabled))
-      if (typeof (data as any).temp_target_c === "number") {
+      if (!tempTargetEditing && typeof (data as any).temp_target_c === "number") {
         setTempTargetC(Number((data as any).temp_target_c))
       }
       if (typeof (data as any).temp_current_c === "number") {
@@ -258,6 +259,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
       if (typeof (data as any).temp_target_c === "number") {
         setTempTargetC(Number((data as any).temp_target_c))
       }
+      setTempTargetEditing(false)
       if (typeof (data as any).temp_current_c === "number") {
         setTempCurrentC(Number((data as any).temp_current_c))
       } else {
@@ -368,7 +370,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
           setFlowRunning(Boolean((data as any).flow_running))
           setFlowError(typeof (data as any).flow_error === "string" ? String((data as any).flow_error) : null)
           setTempEnabled(Boolean((data as any).temp_enabled))
-          if (typeof (data as any).temp_target_c === "number") {
+          if (!tempTargetEditing && typeof (data as any).temp_target_c === "number") {
             setTempTargetC(Number((data as any).temp_target_c))
           }
           if (typeof (data as any).temp_current_c === "number") {
@@ -393,7 +395,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
       cancelled = true
       clearInterval(id)
     }
-  }, [])
+  }, [tempTargetEditing])
 
   return (
     <div className="space-y-6">
@@ -733,6 +735,8 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
             <input
               type="number"
               value={tempTargetC}
+              onFocus={() => setTempTargetEditing(true)}
+              onBlur={() => setTempTargetEditing(false)}
               onChange={(e) => setTempTargetC(Number.parseFloat(e.target.value) || 0)}
               step="0.1"
               className="w-28 px-3 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
