@@ -77,6 +77,9 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
   const [flowError, setFlowError] = useState<string | null>(null)
   const [tempEnabled, setTempEnabled] = useState(false)
   const [tempReady, setTempReady] = useState<boolean | null>(null)
+  const [tempTargetC, setTempTargetC] = useState(58.0)
+  const [tempCurrentC, setTempCurrentC] = useState<number | null>(null)
+  const [tempError, setTempError] = useState<string | null>(null)
 
   const toggleRelay = async (index: number) => {
     const desired = !relayStates[index]
@@ -231,10 +234,39 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
   const tempToggle = async (enabled: boolean) => {
     try {
       await post("/temperature/enable", { enabled })
-      setTempEnabled(enabled)
+      const data = await fetchStatus()
+      setTempEnabled(Boolean((data as any).temp_enabled))
+      if (typeof (data as any).temp_target_c === "number") {
+        setTempTargetC(Number((data as any).temp_target_c))
+      }
+      if (typeof (data as any).temp_current_c === "number") {
+        setTempCurrentC(Number((data as any).temp_current_c))
+      } else {
+        setTempCurrentC(null)
+      }
+      setTempError(typeof (data as any).temp_error === "string" ? String((data as any).temp_error) : null)
       setError(null)
     } catch (err: any) {
       setError(err?.message || "Temp control failed")
+    }
+  }
+
+  const applyTempTarget = async () => {
+    try {
+      await post("/temperature/target", { value_c: tempTargetC })
+      const data = await fetchStatus()
+      if (typeof (data as any).temp_target_c === "number") {
+        setTempTargetC(Number((data as any).temp_target_c))
+      }
+      if (typeof (data as any).temp_current_c === "number") {
+        setTempCurrentC(Number((data as any).temp_current_c))
+      } else {
+        setTempCurrentC(null)
+      }
+      setTempError(typeof (data as any).temp_error === "string" ? String((data as any).temp_error) : null)
+      setError(null)
+    } catch (err: any) {
+      setError(err?.message || "Temp target failed")
     }
   }
 
@@ -336,6 +368,15 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
           setFlowRunning(Boolean((data as any).flow_running))
           setFlowError(typeof (data as any).flow_error === "string" ? String((data as any).flow_error) : null)
           setTempEnabled(Boolean((data as any).temp_enabled))
+          if (typeof (data as any).temp_target_c === "number") {
+            setTempTargetC(Number((data as any).temp_target_c))
+          }
+          if (typeof (data as any).temp_current_c === "number") {
+            setTempCurrentC(Number((data as any).temp_current_c))
+          } else {
+            setTempCurrentC(null)
+          }
+          setTempError(typeof (data as any).temp_error === "string" ? String((data as any).temp_error) : null)
           if (typeof (data as any).temp_ready === "boolean") {
             setTempReady(Boolean((data as any).temp_ready))
           } else {
@@ -656,6 +697,12 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
 
         <div className="premium-card p-6 space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Temperature Control</h2>
+          <p className="text-sm text-muted-foreground">
+            Current:
+            <span className="text-foreground font-semibold ml-2">
+              {tempCurrentC === null ? "N/A" : `${tempCurrentC.toFixed(2)} °C`}
+            </span>
+          </p>
           <p className="text-sm text-muted-foreground flex items-center gap-2">
             Ready:
             <span
@@ -681,6 +728,23 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
               {tempReady === null ? "N/A" : tempReady ? "ON" : "OFF"}
             </span>
           </p>
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-muted-foreground font-medium w-20">Target</label>
+            <input
+              type="number"
+              value={tempTargetC}
+              onChange={(e) => setTempTargetC(Number.parseFloat(e.target.value) || 0)}
+              step="0.1"
+              className="w-28 px-3 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+            />
+            <span className="text-sm text-muted-foreground">°C</span>
+            <button
+              onClick={applyTempTarget}
+              className="px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-primary/20"
+            >
+              Apply
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => tempToggle(true)}
@@ -699,6 +763,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
               Peltier OFF
             </button>
           </div>
+          {tempError && <div className="text-xs text-destructive font-semibold">{tempError}</div>}
         </div>
 
         <div className="premium-card p-6 space-y-4">

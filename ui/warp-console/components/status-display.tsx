@@ -27,6 +27,9 @@ export type DeviceStatus = {
   flow_error?: string | null
   temp_enabled?: boolean
   temp_ready?: boolean | null
+  temp_target_c?: number
+  temp_current_c?: number | null
+  temp_error?: string | null
   target_volume_ml?: number | null
 }
 

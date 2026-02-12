@@ -61,6 +61,10 @@ temperature:
   command_pin: "Q0.6"
   ready_pin: "I0.11"
   ready_gpio_pin: 4
+  tec_port: "/dev/ttyUSB2"
+  tec_channel: 1
+  tec_default_target_c: 58.0
+  tec_ready_tolerance_c: 0.5
 peristaltic:
   enable_pin: "Q0.0"
   dir_forward_pin: "Q0.1"

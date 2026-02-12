@@ -45,6 +45,10 @@ class TempEnable(BaseModel):
     enabled: bool
 
 
+class TempTarget(BaseModel):
+    value_c: float
+
+
 class StartSequence(BaseModel):
     target_volume_ml: Optional[float] = None
 
@@ -240,6 +244,14 @@ def create_app(config: DeviceConfig, config_path: str):
     def temp_enable(payload: TempEnable):
         try:
             controller.set_temp_enabled(payload.enabled)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True}
+
+    @app.post("/temperature/target")
+    def temp_target(payload: TempTarget):
+        try:
+            controller.set_temp_target(payload.value_c)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}

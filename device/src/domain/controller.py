@@ -51,6 +51,9 @@ class DeviceState:
     flow_error: Optional[str] = None
     temp_enabled: bool = False
     temp_ready: Optional[bool] = None
+    temp_target_c: float = 58.0
+    temp_current_c: Optional[float] = None
+    temp_error: Optional[str] = None
     target_volume_ml: Optional[float] = None
 
 
@@ -73,6 +76,7 @@ class DeviceController:
         self.state.pid_enabled = self.pid_valve.state.enabled
         self.state.pid_setpoint = self.pid_valve.state.setpoint
         self.state.temp_enabled = self.temperature.state.enabled
+        self.state.temp_target_c = float(self.temperature.state.target_c)
         self._stop_event = threading.Event()
         self._sequence_thread: Optional[threading.Thread] = None
         self._sequence_target_volume_ml: Optional[float] = None
@@ -122,8 +126,11 @@ class DeviceController:
             self.state.total_ml = float(flow.get("total_ml", 0.0))
             self.state.flow_running = self.flow_sensor.is_running()
             self.state.flow_error = self.flow_sensor.get_last_error()
+            self.state.temp_current_c = self.temperature.read_current_c()
             self.state.temp_ready = self.temperature.read_ready()
             self.state.temp_enabled = self.temperature.state.enabled
+            self.state.temp_target_c = float(self.temperature.state.target_c)
+            self.state.temp_error = self.temperature.state.error
             self.state.peristaltic_enabled = self.peristaltic.state.enabled
             self.state.peristaltic_direction_cw = self.peristaltic.state.direction_forward
             self.state.peristaltic_low_speed = self.peristaltic.state.low_speed
@@ -326,6 +333,23 @@ class DeviceController:
         )
         with self._state_lock:
             self.state.temp_enabled = self.temperature.state.enabled
+            self.state.temp_target_c = float(self.temperature.state.target_c)
+            self.state.temp_current_c = self.temperature.state.current_c
+            self.state.temp_error = self.temperature.state.error
+        self._broadcast_status()
+
+    def set_temp_target(self, target_c: float) -> None:
+        self._ensure_manual_allowed()
+        self._clear_last_error()
+        self._log(f"[Temp] Target set to {target_c:.2f}C")
+        self._retry_void(
+            f"Temp set target {target_c:.2f}C",
+            lambda: self.temperature.set_target_c(target_c),
+        )
+        with self._state_lock:
+            self.state.temp_target_c = float(self.temperature.state.target_c)
+            self.state.temp_current_c = self.temperature.state.current_c
+            self.state.temp_error = self.temperature.state.error
         self._broadcast_status()
 
     def flow_start(self) -> None:
