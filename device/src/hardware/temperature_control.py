@@ -33,11 +33,12 @@ class TemperatureState:
 
 
 class _TecDriver:
-    def __init__(self, port: str, channel: int) -> None:
+    def __init__(self, port: str, channel: int, address: Optional[int] = None) -> None:
         if MeComSerial is None:
             raise RuntimeError("pyMeCom is not available in this environment")
         self.port = port
         self.channel = int(channel)
+        self.address = None if address is None else int(address)
         self._session = None
         self._address = None
         self._lock = threading.Lock()
@@ -46,7 +47,10 @@ class _TecDriver:
         if self._session is not None and self._address is not None:
             return
         self._session = MeComSerial(serialport=self.port)
-        self._address = self._session.identify()
+        if self.address is not None:
+            self._address = int(self.address)
+        else:
+            self._address = self._session.identify()
 
     def _reset(self) -> None:
         if self._session is not None:
@@ -134,7 +138,9 @@ class TemperatureController:
         self._tec = None
         if config.tec_port:
             try:
-                self._tec = _TecDriver(config.tec_port, config.tec_channel)
+                self._tec = _TecDriver(
+                    config.tec_port, config.tec_channel, address=config.tec_address
+                )
             except Exception as exc:
                 self.state.error = f"TEC init failed: {exc}"
 

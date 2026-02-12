@@ -115,6 +115,7 @@ class TemperatureConfig:
     ready_pin: str = "I0.11"
     ready_gpio_pin: int = 4
     tec_port: Optional[str] = None
+    tec_address: Optional[int] = None
     tec_channel: int = 1
     tec_default_target_c: float = 58.0
     tec_ready_tolerance_c: float = 0.5
