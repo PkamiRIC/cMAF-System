@@ -1,4 +1,5 @@
 from typing import Callable, Optional
+import time
 
 from domain.sleeper import InterruptibleSleeper
 
@@ -14,8 +15,17 @@ def run_sequence2(
     move_vertical_close_plate: Optional[Callable[[], None]] = None,
     move_vertical_open_plate: Optional[Callable[[], None]] = None,
     select_rotary_port: Optional[Callable[[int], None]] = None,
+    reset_flow_totals: Optional[Callable[[], None]] = None,
+    start_flow_meter: Optional[Callable[[], None]] = None,
+    stop_flow_meter: Optional[Callable[[], None]] = None,
+    get_total_volume_ml: Optional[Callable[[], float]] = None,
     before_step: Optional[Callable[[str], None]] = None,
     syringe_flow_ml_min: float = 2.0,
+    target_volume_ml: float = 50.0,
+    early_complete_ratio: float = 0.925,
+    early_complete_wait_s: float = 10.0,
+    stagnant_timeout_s: float = 20.0,
+    stagnant_epsilon_ml: float = 0.001,
 ):
     """Sequence 2."""
 
@@ -82,6 +92,81 @@ def run_sequence2(
             raise RuntimeError("Rotary valve adapter unavailable")
         select_rotary_port(port)
 
+    def _stop_flow_meter_safe():
+        if stop_flow_meter is None:
+            return
+        for attempt in range(1, 4):
+            try:
+                stop_flow_meter()
+                return
+            except Exception as exc:
+                _log(f"[WARN] Stop flow meter failed (attempt {attempt}/3): {exc}")
+                _wait_block(0.2)
+        _log("[WARN] Stop flow meter failed after retries; continuing sequence")
+
+    def _volume_loop():
+        if get_total_volume_ml is None:
+            raise RuntimeError("Flow meter total volume adapter unavailable")
+
+        early_threshold_ml = float(target_volume_ml) * early_complete_ratio
+        last_total: Optional[float] = None
+        stagnant_since: Optional[float] = None
+
+        while True:
+            if stop_flag():
+                _log("[INFO] Sequence 2 aborted by STOP.")
+                raise SequenceAbort
+            try:
+                total = float(get_total_volume_ml())
+            except Exception:
+                total = 0.0
+            _log(f"  [Flow] Total volume = {total:.2f} mL")
+
+            if total >= early_threshold_ml:
+                _log(
+                    f"  [Flow] Reached {early_complete_ratio * 100:.1f}% of target "
+                    f"({total:.2f}/{target_volume_ml:.2f} mL). Holding {early_complete_wait_s:.1f}s."
+                )
+                _wait_block(early_complete_wait_s)
+                break
+
+            now = time.monotonic()
+            if last_total is None or abs(total - last_total) > stagnant_epsilon_ml:
+                last_total = total
+                stagnant_since = now
+            else:
+                if stagnant_since is None:
+                    stagnant_since = now
+                if (now - stagnant_since) >= stagnant_timeout_s:
+                    _log(
+                        f"  [Flow] Total volume unchanged for {stagnant_timeout_s:.1f}s "
+                        f"at {total:.2f} mL. Proceeding to next step."
+                    )
+                    break
+
+            if total >= target_volume_ml:
+                break
+            _wait_block(0.2)
+
+    def _run_flow_until_target_or_contingency():
+        # If flow-meter adapters are not wired, preserve legacy behavior.
+        if (
+            reset_flow_totals is None
+            or start_flow_meter is None
+            or stop_flow_meter is None
+            or get_total_volume_ml is None
+        ):
+            _log("[WARN] Flow meter adapters unavailable in Sequence 2; using fallback wait 1s.")
+            _wait_block(1.0)
+            return
+
+        reset_flow_totals()
+        start_flow_meter()
+        try:
+            _volume_loop()
+        finally:
+            _stop_flow_meter_safe()
+
     _log("=== Sequence 2 start ===")
 
     try:
@@ -125,7 +210,10 @@ def run_sequence2(
 
         _run_step("Step 22: Rotary Valve -> Port 1", lambda: _set_port(1))
 
-        _run_step("Step 23: Optional wait", None, wait_after=1.0)
+        _run_step(
+            "Step 23: Run flow until target reached (or >=92.5% + hold, or stagnant 20s)",
+            _run_flow_until_target_or_contingency,
+        )
 
         _run_step("Step 24: Syringe -> 0.0 mL", lambda: _syringe_move(0.0))
 

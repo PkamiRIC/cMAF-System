@@ -665,6 +665,11 @@ class DeviceController:
                     )
                 )
             elif seq in {"sequence2", "seq2", "maf2"}:
+                target_ml = (
+                    self._sequence_target_volume_ml
+                    if self._sequence_target_volume_ml is not None
+                    else float(self.config.sequence2.target_volume_ml)
+                )
                 self._execute_sequence(
                     lambda: run_sequence2(
                         stop_flag=self._stop_event.is_set,
@@ -676,6 +681,15 @@ class DeviceController:
                         move_vertical_close_plate=self._move_vertical_preset("close"),
                         move_vertical_open_plate=self._move_vertical_preset("open"),
                         select_rotary_port=self._select_rotary_port,
+                        reset_flow_totals=self._flow_reset,
+                        start_flow_meter=self._flow_start,
+                        stop_flow_meter=self._flow_stop,
+                        get_total_volume_ml=self._flow_total_ml,
+                        target_volume_ml=target_ml,
+                        early_complete_ratio=self.config.sequence2.early_complete_ratio,
+                        early_complete_wait_s=self.config.sequence2.early_complete_wait_s,
+                        stagnant_timeout_s=self.config.sequence2.stagnant_timeout_s,
+                        stagnant_epsilon_ml=self.config.sequence2.stagnant_epsilon_ml,
                         before_step=self._before_step,
                     )
                 )
