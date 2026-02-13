@@ -187,8 +187,18 @@ class TemperatureController:
         value = float(target_c)
         with self._lock:
             self.state.target_c = value
+        # Requested behavior:
+        # - Target should always be accepted in software state.
+        # - If Peltier loop is OFF, defer TEC write until set_enabled(True).
+        with self._lock:
+            enabled = bool(self.state.enabled)
+        if not enabled:
+            with self._lock:
+                # Clear stale transport errors when user updates a local target while OFF.
+                self.state.error = None
+            return
         if self._tec is None:
-            msg = "TEC target rejected: controller is unavailable (check temperature.tec_port / pyMeCom)"
+            msg = "TEC set target failed: controller unavailable while Peltier is ON"
             with self._lock:
                 self.state.error = msg
             raise RuntimeError(msg)
