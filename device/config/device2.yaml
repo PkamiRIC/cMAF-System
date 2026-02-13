@@ -63,6 +63,9 @@ temperature:
   ready_gpio_pin: 4
   tec_port: "/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DP05MXL4-if00-port0"
   tec_address: 2
+  tec_baudrate: 57600
+  tec_timeout_s: 0.35
+  tec_poll_interval_s: 0.5
   tec_channel: 1
   tec_default_target_c: 58.0
   tec_ready_tolerance_c: 0.5

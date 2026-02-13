@@ -116,6 +116,9 @@ class TemperatureConfig:
     ready_gpio_pin: int = 4
     tec_port: Optional[str] = None
     tec_address: Optional[int] = None
+    tec_baudrate: int = 57600
+    tec_timeout_s: float = 0.35
+    tec_poll_interval_s: float = 0.5
     tec_channel: int = 1
     tec_default_target_c: float = 58.0
     tec_ready_tolerance_c: float = 0.5

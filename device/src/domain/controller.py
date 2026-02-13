@@ -104,6 +104,9 @@ class DeviceController:
         # --- Live syringe status polling ---
         self._syringe_poll_stop = threading.Event()
         self._syringe_poll_thread: Optional[threading.Thread] = None
+        self._live_poll_stop = threading.Event()
+        self._flow_poll_thread: Optional[threading.Thread] = None
+        self._temp_poll_thread: Optional[threading.Thread] = None
 
         # Best-effort initial connections for axes
         try:
@@ -115,19 +118,15 @@ class DeviceController:
 
         # Start syringe live poller (busy + volume)
         self._start_syringe_poller(interval_s=0.25)
+        self._start_flow_poller(interval_s=0.2)
+        self._start_temp_poller(interval_s=0.5)
 
     # ---------------------------------------------------
     # STATUS
     # ---------------------------------------------------
     def get_status(self) -> dict:
         with self._state_lock:
-            flow = self.flow_sensor.read()
-            self.state.flow_ml_min = float(flow.get("flow_ml_min", 0.0))
-            self.state.total_ml = float(flow.get("total_ml", 0.0))
-            self.state.flow_running = self.flow_sensor.is_running()
-            self.state.flow_error = self.flow_sensor.get_last_error()
-            self.state.temp_current_c = self.temperature.read_current_c()
-            self.state.temp_ready = self.temperature.read_ready()
+            # Live flow/temperature are updated asynchronously by pollers.
             self.state.temp_enabled = self.temperature.state.enabled
             self.state.temp_target_c = float(self.temperature.state.target_c)
             self.state.temp_error = self.temperature.state.error
@@ -140,7 +139,7 @@ class DeviceController:
             # update cached UI fields
             self.state.relay_states = dict(self.relay_states)
             self.state.logs = list(self._log_buffer)
-            snapshot = {"device_id": self.config.device_id, **asdict(self.state)}
+            snapshot = self._snapshot_unlocked()
         return snapshot
 
     def attach_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -570,6 +569,88 @@ class DeviceController:
             target=self._syringe_poller_loop, args=(interval_s,), daemon=True
         )
         self._syringe_poll_thread.start()
+
+    def _start_flow_poller(self, interval_s: float = 0.2) -> None:
+        if self._flow_poll_thread and self._flow_poll_thread.is_alive():
+            return
+        self._flow_poll_thread = threading.Thread(
+            target=self._flow_poller_loop, args=(interval_s,), daemon=True
+        )
+        self._flow_poll_thread.start()
+
+    def _start_temp_poller(self, interval_s: float = 0.5) -> None:
+        if self._temp_poll_thread and self._temp_poll_thread.is_alive():
+            return
+        self._temp_poll_thread = threading.Thread(
+            target=self._temp_poller_loop, args=(interval_s,), daemon=True
+        )
+        self._temp_poll_thread.start()
+
+    def _flow_poller_loop(self, interval_s: float) -> None:
+        while not self._live_poll_stop.is_set():
+            changed = False
+            try:
+                flow = self.flow_sensor.read()
+                flow_ml_min = float(flow.get("flow_ml_min", 0.0))
+                total_ml = float(flow.get("total_ml", 0.0))
+                running = bool(self.flow_sensor.is_running())
+                err = self.flow_sensor.get_last_error()
+
+                with self._state_lock:
+                    if self.state.flow_ml_min != flow_ml_min:
+                        self.state.flow_ml_min = flow_ml_min
+                        changed = True
+                    if self.state.total_ml != total_ml:
+                        self.state.total_ml = total_ml
+                        changed = True
+                    if self.state.flow_running != running:
+                        self.state.flow_running = running
+                        changed = True
+                    if self.state.flow_error != err:
+                        self.state.flow_error = err
+                        changed = True
+            except Exception as exc:
+                with self._state_lock:
+                    if self.state.flow_error != str(exc):
+                        self.state.flow_error = str(exc)
+                        changed = True
+            if changed:
+                self._broadcast_status()
+            self._live_poll_stop.wait(max(0.05, interval_s))
+
+    def _temp_poller_loop(self, interval_s: float) -> None:
+        while not self._live_poll_stop.is_set():
+            changed = False
+            try:
+                current = self.temperature.read_current_c()
+                ready = self.temperature.read_ready()
+                enabled = bool(self.temperature.state.enabled)
+                target = float(self.temperature.state.target_c)
+                err = self.temperature.state.error
+                with self._state_lock:
+                    if self.state.temp_current_c != current:
+                        self.state.temp_current_c = current
+                        changed = True
+                    if self.state.temp_ready != ready:
+                        self.state.temp_ready = ready
+                        changed = True
+                    if self.state.temp_enabled != enabled:
+                        self.state.temp_enabled = enabled
+                        changed = True
+                    if self.state.temp_target_c != target:
+                        self.state.temp_target_c = target
+                        changed = True
+                    if self.state.temp_error != err:
+                        self.state.temp_error = err
+                        changed = True
+            except Exception as exc:
+                with self._state_lock:
+                    if self.state.temp_error != str(exc):
+                        self.state.temp_error = str(exc)
+                        changed = True
+            if changed:
+                self._broadcast_status()
+            self._live_poll_stop.wait(max(0.1, interval_s))
 
     def _syringe_poller_loop(self, interval_s: float) -> None:
         """
@@ -1149,13 +1230,17 @@ class DeviceController:
     def _broadcast_status(self) -> None:
         if not self._loop or not self._sse_subscribers:
             return
-        snapshot = self.get_status()
+        with self._state_lock:
+            snapshot = self._snapshot_unlocked()
         payload = json.dumps(snapshot)
         for q in list(self._sse_subscribers):
             try:
                 self._loop.call_soon_threadsafe(q.put_nowait, payload)
             except Exception:
                 continue
+
+    def _snapshot_unlocked(self) -> dict:
+        return {"device_id": self.config.device_id, **asdict(self.state)}
 
     def _maybe_force_detach_sequence(self) -> bool:
         """

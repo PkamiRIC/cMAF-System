@@ -33,12 +33,21 @@ class TemperatureState:
 
 
 class _TecDriver:
-    def __init__(self, port: str, channel: int, address: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        port: str,
+        channel: int,
+        address: Optional[int] = None,
+        baudrate: int = 57600,
+        timeout_s: float = 0.35,
+    ) -> None:
         if MeComSerial is None:
             raise RuntimeError("pyMeCom is not available in this environment")
         self.port = port
         self.channel = int(channel)
         self.address = None if address is None else int(address)
+        self.baudrate = int(baudrate)
+        self.timeout_s = float(timeout_s)
         self._session = None
         self._address = None
         self._lock = threading.Lock()
@@ -46,7 +55,16 @@ class _TecDriver:
     def _connect(self) -> None:
         if self._session is not None and self._address is not None:
             return
-        self._session = MeComSerial(serialport=self.port)
+        kwargs = {
+            "serialport": self.port,
+            "baudrate": self.baudrate,
+        }
+        try:
+            kwargs["timeout"] = self.timeout_s
+            self._session = MeComSerial(**kwargs)
+        except TypeError:
+            kwargs.pop("timeout", None)
+            self._session = MeComSerial(**kwargs)
         if self.address is not None:
             self._address = int(self.address)
         else:
@@ -112,6 +130,7 @@ class _TecDriver:
 class TemperatureController:
     def __init__(self, config: TemperatureConfig) -> None:
         self.config = config
+        self._lock = threading.Lock()
         self.state = TemperatureState(
             enabled=False,
             ready=None,
@@ -119,6 +138,8 @@ class TemperatureController:
             current_c=None,
             error=None,
         )
+        self._poll_stop = threading.Event()
+        self._poll_thread: Optional[threading.Thread] = None
         ensure_plc_init()
         if plc:
             safe_plc_call("pin_mode", plc.pin_mode, config.command_pin, plc.OUTPUT)
@@ -139,63 +160,70 @@ class TemperatureController:
         if config.tec_port:
             try:
                 self._tec = _TecDriver(
-                    config.tec_port, config.tec_channel, address=config.tec_address
+                    config.tec_port,
+                    config.tec_channel,
+                    address=config.tec_address,
+                    baudrate=config.tec_baudrate,
+                    timeout_s=config.tec_timeout_s,
                 )
             except Exception as exc:
-                self.state.error = f"TEC init failed: {exc}"
+                with self._lock:
+                    self.state.error = f"TEC init failed: {exc}"
+
+        if self._tec is not None:
+            self._start_polling()
 
     def set_target_c(self, target_c: float) -> None:
         value = float(target_c)
-        self.state.target_c = value
+        with self._lock:
+            self.state.target_c = value
         if self._tec is None:
             return
         try:
             self._tec.set_target_c(value)
-            self.state.error = None
+            with self._lock:
+                self.state.error = None
         except Exception as exc:
-            self.state.error = f"TEC set target failed: {exc}"
-            raise RuntimeError(self.state.error)
+            with self._lock:
+                self.state.error = f"TEC set target failed: {exc}"
+                err = self.state.error
+            raise RuntimeError(err)
 
     def set_enabled(self, enabled: bool) -> None:
-        self.state.enabled = bool(enabled)
+        with self._lock:
+            self.state.enabled = bool(enabled)
         if plc:
             safe_plc_call("digital_write", plc.digital_write, self.config.command_pin, enabled)
         if self._tec is not None:
             try:
                 # Ensure target is pushed before enabling control loop.
-                self._tec.set_target_c(self.state.target_c)
+                with self._lock:
+                    target_c = self.state.target_c
+                self._tec.set_target_c(target_c)
                 self._tec.set_enabled(bool(enabled))
-                self.state.error = None
+                with self._lock:
+                    self.state.error = None
             except Exception as exc:
-                self.state.error = f"TEC enable failed: {exc}"
-                raise RuntimeError(self.state.error)
+                with self._lock:
+                    self.state.error = f"TEC enable failed: {exc}"
+                    err = self.state.error
+                raise RuntimeError(err)
 
     def force_off(self) -> None:
         self.set_enabled(False)
 
     def read_current_c(self) -> Optional[float]:
-        if self._tec is None:
-            self.state.current_c = None
-            return None
-        try:
-            self.state.current_c = float(self._tec.read_current_c())
-            self.state.error = None
+        with self._lock:
             return self.state.current_c
-        except Exception as exc:
-            self.state.error = f"TEC read failed: {exc}"
-            self.state.current_c = None
-            return None
 
     def read_ready(self) -> Optional[bool]:
         if self._tec is not None:
-            current = self.read_current_c()
-            if current is not None:
-                stable = self._tec.read_stable_flag()
-                close_to_target = abs(current - self.state.target_c) <= float(
-                    self.config.tec_ready_tolerance_c
-                )
-                self.state.ready = bool(stable) if stable is not None else close_to_target
+            with self._lock:
                 return self.state.ready
+        return self._read_ready_from_inputs()
+
+    def _read_ready_from_inputs(self) -> Optional[bool]:
+        ready: Optional[bool] = None
 
         # Prefer GPIO ready if configured/available (external sensor)
         if GPIO is not None:
@@ -205,14 +233,56 @@ class TemperatureController:
                         GPIO.setmode(GPIO.BCM)
                     GPIO.setup(self.config.ready_gpio_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
                     self._gpio_ready_ok = True
-                self.state.ready = bool(GPIO.input(self.config.ready_gpio_pin))
-                return self.state.ready
+                ready = bool(GPIO.input(self.config.ready_gpio_pin))
+                with self._lock:
+                    self.state.ready = ready
+                return ready
             except Exception:
                 self._gpio_ready_ok = False
         if plc:
             val = safe_plc_call("digital_read", plc.digital_read, self.config.ready_pin)
             if isinstance(val, int):
-                self.state.ready = bool(val)
-                return self.state.ready
-        self.state.ready = None
-        return None
+                ready = bool(val)
+                with self._lock:
+                    self.state.ready = ready
+                return ready
+        with self._lock:
+            self.state.ready = None
+        return ready
+
+    def _sample_tec(self) -> None:
+        if self._tec is None:
+            return
+        current: Optional[float] = None
+        ready: Optional[bool] = None
+        err: Optional[str] = None
+
+        try:
+            current = float(self._tec.read_current_c())
+            stable = self._tec.read_stable_flag()
+            with self._lock:
+                target_c = self.state.target_c
+            close_to_target = abs(current - target_c) <= float(self.config.tec_ready_tolerance_c)
+            ready = bool(stable) if stable is not None else close_to_target
+        except Exception as exc:
+            err = f"TEC read failed: {exc}"
+
+        with self._lock:
+            self.state.current_c = current
+            self.state.ready = ready
+            self.state.error = err
+
+    def _poll_loop(self, interval_s: float) -> None:
+        while not self._poll_stop.is_set():
+            self._sample_tec()
+            self._poll_stop.wait(interval_s)
+
+    def _start_polling(self) -> None:
+        if self._poll_thread and self._poll_thread.is_alive():
+            return
+        interval_s = max(0.1, float(self.config.tec_poll_interval_s))
+        self._poll_stop.clear()
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop, args=(interval_s,), daemon=True
+        )
+        self._poll_thread.start()
