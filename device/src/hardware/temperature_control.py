@@ -218,6 +218,16 @@ class TemperatureController:
         if plc:
             safe_plc_call("digital_write", plc.digital_write, self.config.command_pin, enabled)
         if self._tec is not None:
+            if not enabled:
+                # Turning OFF should be best-effort and quiet.
+                try:
+                    self._tec.set_enabled(False)
+                except Exception:
+                    pass
+                with self._lock:
+                    self.state.ready = False
+                    self.state.error = None
+                return
             try:
                 # Ensure target is pushed before enabling control loop.
                 with self._lock:
@@ -275,6 +285,14 @@ class TemperatureController:
 
     def _sample_tec(self) -> None:
         if self._tec is None:
+            return
+        with self._lock:
+            enabled = bool(self.state.enabled)
+        if not enabled:
+            # Requested behavior: no TEC read errors while controller is OFF.
+            with self._lock:
+                self.state.ready = False
+                self.state.error = None
             return
         current: Optional[float] = None
         ready: Optional[bool] = None
