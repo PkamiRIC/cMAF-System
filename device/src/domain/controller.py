@@ -743,7 +743,6 @@ class DeviceController:
             syringe_adapter = _SyringeAdapter(self, self._stop_event)
             seq = sequence_name.lower()
             if seq in {"sequence1", "seq1", "maf", "maf1"}:
-                self._apply_sequence_temp_target()
                 target_ml = (
                     self._sequence_target_volume_ml
                     if self._sequence_target_volume_ml is not None
@@ -781,7 +780,6 @@ class DeviceController:
                     )
                 )
             elif seq in {"sequence2", "seq2", "maf2"}:
-                self._apply_sequence_temp_target()
                 target_ml = (
                     self._sequence_target_volume_ml
                     if self._sequence_target_volume_ml is not None
@@ -899,32 +897,52 @@ class DeviceController:
         return float(self.flow_sensor.read().get("total_ml", 0.0))
 
     def _temp_enable(self) -> None:
-        self.temperature.set_enabled(True)
-
-    def _temp_disable(self) -> None:
-        self.temperature.set_enabled(False)
-
-    def _apply_sequence_temp_target(self) -> None:
         target_c = (
             float(self._sequence_temp_target_c)
             if self._sequence_temp_target_c is not None
             else float(self.config.temperature.tec_default_target_c)
         )
-        self._log(f"[Temp] Sequence target {target_c:.2f}C")
-        self.temperature.set_target_c(target_c)
-        with self._state_lock:
-            self.state.temp_target_c = float(self.temperature.state.target_c)
+        try:
+            self.temperature.set_target_c(target_c)
+            with self._state_lock:
+                self.state.temp_target_c = float(self.temperature.state.target_c)
+            self._log(f"[Temp] Sequence target {target_c:.2f}C")
+        except Exception as exc:
+            self._log(f"[WARN] Temp target apply skipped: {exc}")
+            with self._state_lock:
+                self.state.temp_error = str(exc)
+        try:
+            self.temperature.set_enabled(True)
+        except Exception as exc:
+            self._log(f"[WARN] Temp enable skipped: {exc}")
+            with self._state_lock:
+                self.state.temp_error = str(exc)
+
+    def _temp_disable(self) -> None:
+        try:
+            self.temperature.set_enabled(False)
+        except Exception as exc:
+            self._log(f"[WARN] Temp disable skipped: {exc}")
+            with self._state_lock:
+                self.state.temp_error = str(exc)
 
     def _temp_wait_ready(self, timeout: float = 120.0) -> None:
+        if not self.temperature.state.enabled:
+            self._log("[WARN] Temp wait bypassed: controller is OFF")
+            return
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self._stop_event.is_set():
                 raise InterruptedError("Sequence canceled")
-            state = self.temperature.read_ready()
+            try:
+                state = self.temperature.read_ready()
+            except Exception as exc:
+                self._log(f"[WARN] Temp wait bypassed: {exc}")
+                return
             if state:
                 return
             time.sleep(0.5)
-        raise RuntimeError("Temperature controller ready timeout")
+        self._log("[WARN] Temp ready timeout; continuing sequence")
 
     def _maf_wait_for_heating(self, duration: float = 10.0) -> None:
         end = time.time() + max(0.0, duration)
