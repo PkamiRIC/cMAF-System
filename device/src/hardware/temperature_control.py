@@ -102,7 +102,7 @@ class _TecDriver:
         v = 1 if enabled else 0
         self._with_retry(
             lambda s, a: s.set_parameter(
-                value=v, parameter_name="Status", address=a, parameter_instance=self.channel
+                value=v, parameter_id=2010, address=a, parameter_instance=self.channel
             )
         )
 
@@ -169,6 +169,9 @@ class TemperatureController:
             except Exception as exc:
                 with self._lock:
                     self.state.error = f"TEC init failed: {exc}"
+        else:
+            with self._lock:
+                self.state.error = "TEC disabled: temperature.tec_port is not configured"
 
         if self._tec is not None:
             self._start_polling()
@@ -178,7 +181,10 @@ class TemperatureController:
         with self._lock:
             self.state.target_c = value
         if self._tec is None:
-            return
+            msg = "TEC target rejected: controller is unavailable (check temperature.tec_port / pyMeCom)"
+            with self._lock:
+                self.state.error = msg
+            raise RuntimeError(msg)
         try:
             self._tec.set_target_c(value)
             with self._lock:
