@@ -40,7 +40,7 @@ horizontal_axis:
   timeout: 1.0
   vertical_guard_mm: 10
 flow_sensor:
-  port: "/dev/ttySCC1"
+  port: "/dev/serial/by-id/usb-Sensirion_AG_Sensirion_RS485-USB_Cable_FT7TV0U4-if00-port0"
   medium: "water"
   interval_ms: 20
   scale_factor: 500.0
@@ -61,7 +61,7 @@ temperature:
   command_pin: "Q0.6"
   ready_pin: "I0.11"
   ready_gpio_pin: 4
-  tec_port: "/dev/ttyTEC"
+  tec_port: "/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DP05MXL4-if00-port0"
   tec_address: 2
   tec_channel: 1
   tec_default_target_c: 58.0
