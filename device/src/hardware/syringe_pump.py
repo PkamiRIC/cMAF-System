@@ -358,8 +358,12 @@ class SyringePump:
                 return False
             time.sleep(0.5)
 
-    def home(self, stop_flag: Optional[Callable[[], bool]] = None) -> None:
-        """Send homing frames and wait until the pump reports idle."""
+    def home(self, stop_flag: Optional[Callable[[], bool]] = None) -> bool:
+        """
+        Send homing frames and wait until the pump reports idle.
+        Returns True when homing completed.
+        Raises RuntimeError when command/communication fails.
+        """
 
         def _make_home_cmd(flag_byte: int) -> bytes:
             frame = bytearray(
@@ -393,6 +397,15 @@ class SyringePump:
         cmd1 = _make_home_cmd(0x00)
         cmd2 = _make_home_cmd(0x02)
 
+        def _is_valid_ack(resp: bytes, sent: bytes) -> bool:
+            return (
+                len(resp) == 8
+                and resp[0] == self.config.address
+                and resp[1] == 0x10
+                and resp[2:6] == sent[2:6]
+                and self._crc16(resp[:-2]) == resp[-2:]
+            )
+
         try:
             # IMPORTANT: lock serial port access to prevent concurrent poll/write collisions
             with get_port_lock(self.config.port):
@@ -404,17 +417,26 @@ class SyringePump:
                     ser.flush()
                     time.sleep(0.2)
                     resp1 = ser.read(8)
+                    if not _is_valid_ack(resp1, cmd1):
+                        raise RuntimeError("Syringe home command 1 not acknowledged")
 
                     ser.write(cmd2)
                     ser.flush()
                     time.sleep(0.2)
                     resp2 = ser.read(8)
+                    if not _is_valid_ack(resp2, cmd2):
+                        raise RuntimeError("Syringe home command 2 not acknowledged")
             if self._debug_hex:
                 print(
                     f"[HOME] addr={self.config.address} cmd1={cmd1.hex(' ')} "
                     f"rx1={resp1.hex(' ')} cmd2={cmd2.hex(' ')} rx2={resp2.hex(' ')}"
                 )
-        except Exception:
-            return
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(f"Syringe home serial error: {exc}") from exc
 
-        self.wait_until_idle(timeout=60, stop_flag=stop_flag)
+        ok = self.wait_until_idle(timeout=60, stop_flag=stop_flag)
+        if not ok:
+            raise RuntimeError("Syringe home did not reach idle state")
+        return True

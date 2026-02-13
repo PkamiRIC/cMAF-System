@@ -446,14 +446,21 @@ class DeviceController:
         self._log("[Syringe] homing")
         # Do not force syringe_busy; poller will reflect true motion.
         with self._motion_lock:
+            last_exc: Optional[Exception] = None
             for attempt in range(1, 3):
                 if self._stop_event.is_set():
                     raise RuntimeError("Operation stopped")
-                self.syringe.home(stop_flag=self._stop_event.is_set)
-                ok = self.syringe.wait_until_idle(timeout=120, stop_flag=self._stop_event.is_set)
+                try:
+                    ok = self.syringe.home(stop_flag=self._stop_event.is_set)
+                    last_exc = None
+                except Exception as exc:
+                    ok = False
+                    last_exc = exc
                 if ok:
                     break
                 if attempt >= 2:
+                    if last_exc:
+                        raise RuntimeError(f"Syringe home failed: {last_exc}") from last_exc
                     raise RuntimeError("Syringe home timed out")
                 time.sleep(0.2)
         with self._state_lock:
@@ -1021,14 +1028,21 @@ class DeviceController:
             except Exception:
                 pass
             with self._motion_lock:
+                last_exc: Optional[Exception] = None
                 for attempt in range(1, 3):
-                    self.syringe.home(stop_flag=self._stop_event.is_set)
-                    ok = self.syringe.wait_until_idle(
-                        timeout=120, stop_flag=self._stop_event.is_set
-                    )
+                    try:
+                        ok = self.syringe.home(stop_flag=self._stop_event.is_set)
+                        last_exc = None
+                    except Exception as exc:
+                        ok = False
+                        last_exc = exc
                     if ok:
                         break
                     if attempt >= 2:
+                        if last_exc:
+                            raise RuntimeError(
+                                f"Syringe home failed during initialize: {last_exc}"
+                            ) from last_exc
                         raise RuntimeError("Syringe home timed out during initialize")
                     time.sleep(0.2)
             self._append_log("Syringe homed")
