@@ -1178,11 +1178,15 @@ class DeviceController:
     def _ensure_motion_available(self, label: str) -> None:
         """
         Reject new motion commands if another motion is in progress.
-        This is a fast, non-blocking check.
+        Allow a short grace period for transient lock holds to clear.
         """
-        if not self._motion_lock.acquire(blocking=False):
-            raise RuntimeError(f"{label} rejected: motion busy")
-        self._motion_lock.release()
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            if self._motion_lock.acquire(blocking=False):
+                self._motion_lock.release()
+                return
+            time.sleep(0.05)
+        raise RuntimeError(f"{label} rejected: motion busy")
 
     def _retry_bool(self, label: str, fn: Callable[[], bool]) -> bool:
         last_ok = False
