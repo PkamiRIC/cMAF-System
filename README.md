@@ -29,6 +29,60 @@ This repository is intentionally trimmed to active code paths only.
 - TEC: Meerstetter via pyMeCom on serial (recommended by-id path in YAML).
 - PLC I/O pins are configured through `device2.yaml`.
 
+### USB/Serial Naming (Flow + TEC)
+Use stable names so device order changes (`ttyUSB0/1`) do not break startup.
+
+Check current USB serial devices:
+```bash
+ls -l /dev/serial/by-id/
+```
+
+Current expected IDs in this setup:
+- Flow: `usb-Sensirion_AG_Sensirion_RS485-USB_Cable_FT7TV0U4-if00-port0`
+- TEC: `usb-FTDI_FT230X_Basic_UART_DP05MXL4-if00-port0`
+
+Use them directly in `device/config/device2.yaml`:
+```yaml
+flow_sensor:
+  port: "/dev/serial/by-id/usb-Sensirion_AG_Sensirion_RS485-USB_Cable_FT7TV0U4-if00-port0"
+temperature:
+  tec_port: "/dev/serial/by-id/usb-FTDI_FT230X_Basic_UART_DP05MXL4-if00-port0"
+```
+
+Optional: create custom symlinks (`/dev/ttyFLOW`, `/dev/ttyTEC`) with udev:
+```bash
+sudo tee /etc/udev/rules.d/99-cmaf-serial.rules > /dev/null <<'EOF'
+SUBSYSTEM=="tty", ENV{ID_SERIAL_SHORT}=="FT7TV0U4", SYMLINK+="ttyFLOW"
+SUBSYSTEM=="tty", ENV{ID_SERIAL_SHORT}=="DP05MXL4", SYMLINK+="ttyTEC"
+EOF
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+ls -l /dev/ttyFLOW /dev/ttyTEC
+```
+
+### LAM Driver Pin + RS485 Direction Command
+In this setup, peristaltic direction uses both:
+- PLC digital pin `Q0.2` (`peristaltic.dir_reverse_pin`)
+- RS485 write to the external direction driver (`peristaltic.dir_driver_*`)
+
+Active mapping in code:
+- CW/forward: `Q0.2 = HIGH`, RS485 value `0x0081` (DO1 OFF)
+- CCW/reverse: `Q0.2 = LOW`, RS485 value `0x0001` (DO1 ON)
+
+RS485 command format used by backend (`device/src/hardware/peristaltic_pump.py`):
+- Modbus function `0x06`, register `0xA4F7`, value `0x0081` or `0x0001`, address from `dir_driver_address` (default `76` / `0x4C`).
+
+Operational example (preferred through API):
+```bash
+# CW
+curl -X POST http://127.0.0.1:8002/peristaltic/direction \
+  -H "Content-Type: application/json" -d '{"forward": true}'
+
+# CCW
+curl -X POST http://127.0.0.1:8002/peristaltic/direction \
+  -H "Content-Type: application/json" -d '{"forward": false}'
+```
+
 ## Pi Setup (Step by Step)
 ### 1. Base packages
 ```bash
