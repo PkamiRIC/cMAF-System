@@ -19,5 +19,10 @@ ui/**/node_modules
 ui/**/.env
 ui/**/.env.*
 ui/**/dist
-ui/**/next
+ui/**/.next
 ui/**/.turbo
+ui/**/.cache
+ui/**/out
+
+# Build/runtime noise
+*.bak
