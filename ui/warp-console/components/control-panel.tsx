@@ -254,6 +254,8 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
 
   const applyTempTarget = async () => {
     try {
+      // Keep local draft protected from status polling during apply click.
+      setTempTargetEditing(true)
       await post("/temperature/target", { value_c: tempTargetC })
       const data = await fetchStatus()
       if (typeof (data as any).temp_target_c === "number") {
@@ -743,6 +745,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
             />
             <span className="text-sm text-muted-foreground">°C</span>
             <button
+              onMouseDown={(e) => e.preventDefault()}
               onClick={applyTempTarget}
               className="px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90 transition-all shadow-md shadow-primary/20"
             >
