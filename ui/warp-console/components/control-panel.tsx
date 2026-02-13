@@ -78,6 +78,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
   const [tempEnabled, setTempEnabled] = useState(false)
   const [tempReady, setTempReady] = useState<boolean | null>(null)
   const [tempTargetC, setTempTargetC] = useState(58.0)
+  const [tempTargetDraft, setTempTargetDraft] = useState("58.0")
   const [tempTargetEditing, setTempTargetEditing] = useState(false)
   const [tempCurrentC, setTempCurrentC] = useState<number | null>(null)
   const [tempError, setTempError] = useState<string | null>(null)
@@ -238,7 +239,9 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
       const data = await fetchStatus()
       setTempEnabled(Boolean((data as any).temp_enabled))
       if (!tempTargetEditing && typeof (data as any).temp_target_c === "number") {
-        setTempTargetC(Number((data as any).temp_target_c))
+        const target = Number((data as any).temp_target_c)
+        setTempTargetC(target)
+        setTempTargetDraft(target.toFixed(1))
       }
       if (typeof (data as any).temp_current_c === "number") {
         setTempCurrentC(Number((data as any).temp_current_c))
@@ -256,10 +259,16 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
     try {
       // Keep local draft protected from status polling during apply click.
       setTempTargetEditing(true)
-      await post("/temperature/target", { value_c: tempTargetC })
+      const parsed = Number.parseFloat(tempTargetDraft)
+      if (!Number.isFinite(parsed)) {
+        throw new Error("Invalid temperature target")
+      }
+      await post("/temperature/target", { value_c: parsed })
       const data = await fetchStatus()
       if (typeof (data as any).temp_target_c === "number") {
-        setTempTargetC(Number((data as any).temp_target_c))
+        const target = Number((data as any).temp_target_c)
+        setTempTargetC(target)
+        setTempTargetDraft(target.toFixed(1))
       }
       setTempTargetEditing(false)
       if (typeof (data as any).temp_current_c === "number") {
@@ -373,7 +382,9 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
           setFlowError(typeof (data as any).flow_error === "string" ? String((data as any).flow_error) : null)
           setTempEnabled(Boolean((data as any).temp_enabled))
           if (!tempTargetEditing && typeof (data as any).temp_target_c === "number") {
-            setTempTargetC(Number((data as any).temp_target_c))
+            const target = Number((data as any).temp_target_c)
+            setTempTargetC(target)
+            setTempTargetDraft(target.toFixed(1))
           }
           if (typeof (data as any).temp_current_c === "number") {
             setTempCurrentC(Number((data as any).temp_current_c))
@@ -736,10 +747,16 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
             <label className="text-sm text-muted-foreground font-medium w-20">Target</label>
             <input
               type="number"
-              value={tempTargetC}
+              value={tempTargetDraft}
               onFocus={() => setTempTargetEditing(true)}
               onBlur={() => setTempTargetEditing(false)}
-              onChange={(e) => setTempTargetC(Number.parseFloat(e.target.value) || 0)}
+              onChange={(e) => {
+                setTempTargetDraft(e.target.value)
+                const parsed = Number.parseFloat(e.target.value)
+                if (Number.isFinite(parsed)) {
+                  setTempTargetC(parsed)
+                }
+              }}
               step="0.1"
               className="w-28 px-3 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary transition-all"
             />
