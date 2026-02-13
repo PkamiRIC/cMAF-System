@@ -33,9 +33,14 @@ async function fetchStatus(): Promise<DeviceStatus> {
 type ControlPanelProps = {
   targetVolumeMl: number
   setTargetVolumeMl: (value: number) => void
+  setSequenceTempTargetDraft: (value: string) => void
 }
 
-export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: ControlPanelProps) {
+export default function ControlPanel({
+  targetVolumeMl,
+  setTargetVolumeMl,
+  setSequenceTempTargetDraft,
+}: ControlPanelProps) {
   const [verticalPos, setVerticalPos] = useState(0.0)
   const [verticalTarget, setVerticalTarget] = useState(25.0)
   const [verticalVelocity, setVerticalVelocity] = useState(0.25)
@@ -242,6 +247,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
         const target = Number((data as any).temp_target_c)
         setTempTargetC(target)
         setTempTargetDraft(target.toFixed(1))
+        setSequenceTempTargetDraft(target.toFixed(1))
       }
       if (typeof (data as any).temp_current_c === "number") {
         setTempCurrentC(Number((data as any).temp_current_c))
@@ -269,6 +275,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
         const target = Number((data as any).temp_target_c)
         setTempTargetC(target)
         setTempTargetDraft(target.toFixed(1))
+        setSequenceTempTargetDraft(target.toFixed(1))
       }
       setTempTargetEditing(false)
       if (typeof (data as any).temp_current_c === "number") {
@@ -385,6 +392,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
             const target = Number((data as any).temp_target_c)
             setTempTargetC(target)
             setTempTargetDraft(target.toFixed(1))
+            setSequenceTempTargetDraft(target.toFixed(1))
           }
           if (typeof (data as any).temp_current_c === "number") {
             setTempCurrentC(Number((data as any).temp_current_c))
@@ -752,6 +760,7 @@ export default function ControlPanel({ targetVolumeMl, setTargetVolumeMl }: Cont
               onBlur={() => setTempTargetEditing(false)}
               onChange={(e) => {
                 setTempTargetDraft(e.target.value)
+                setSequenceTempTargetDraft(e.target.value)
                 const parsed = Number.parseFloat(e.target.value)
                 if (Number.isFinite(parsed)) {
                   setTempTargetC(parsed)

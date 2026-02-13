@@ -80,6 +80,7 @@ class DeviceController:
         self._stop_event = threading.Event()
         self._sequence_thread: Optional[threading.Thread] = None
         self._sequence_target_volume_ml: Optional[float] = None
+        self._sequence_temp_target_c: Optional[float] = None
         self._last_stop_request_at: Optional[float] = None
         self._sequence_stop_timeout_s = 5.0
         self._state_lock = threading.Lock()
@@ -148,7 +149,12 @@ class DeviceController:
     # ---------------------------------------------------
     # COMMANDS
     # ---------------------------------------------------
-    def start_sequence(self, sequence_name: str, target_volume_ml: Optional[float] = None) -> None:
+    def start_sequence(
+        self,
+        sequence_name: str,
+        target_volume_ml: Optional[float] = None,
+        temp_target_c: Optional[float] = None,
+    ) -> None:
         if self._sequence_thread and self._sequence_thread.is_alive():
             if self._maybe_force_detach_sequence():
                 pass
@@ -165,6 +171,7 @@ class DeviceController:
             self.state.sequence_step = None
             self.state.target_volume_ml = target_volume_ml
         self._sequence_target_volume_ml = target_volume_ml
+        self._sequence_temp_target_c = temp_target_c
         self._broadcast_status()
 
         self._stop_event.clear()
@@ -736,6 +743,7 @@ class DeviceController:
             syringe_adapter = _SyringeAdapter(self, self._stop_event)
             seq = sequence_name.lower()
             if seq in {"sequence1", "seq1", "maf", "maf1"}:
+                self._apply_sequence_temp_target()
                 target_ml = (
                     self._sequence_target_volume_ml
                     if self._sequence_target_volume_ml is not None
@@ -773,6 +781,7 @@ class DeviceController:
                     )
                 )
             elif seq in {"sequence2", "seq2", "maf2"}:
+                self._apply_sequence_temp_target()
                 target_ml = (
                     self._sequence_target_volume_ml
                     if self._sequence_target_volume_ml is not None
@@ -834,6 +843,7 @@ class DeviceController:
                 self.state.stop_requested = False
                 self.state.target_volume_ml = None
             self._sequence_target_volume_ml = None
+            self._sequence_temp_target_c = None
             self._broadcast_status()
             self._stop_event.clear()
 
@@ -893,6 +903,17 @@ class DeviceController:
 
     def _temp_disable(self) -> None:
         self.temperature.set_enabled(False)
+
+    def _apply_sequence_temp_target(self) -> None:
+        target_c = (
+            float(self._sequence_temp_target_c)
+            if self._sequence_temp_target_c is not None
+            else float(self.config.temperature.tec_default_target_c)
+        )
+        self._log(f"[Temp] Sequence target {target_c:.2f}C")
+        self.temperature.set_target_c(target_c)
+        with self._state_lock:
+            self.state.temp_target_c = float(self.temperature.state.target_c)
 
     def _temp_wait_ready(self, timeout: float = 120.0) -> None:
         deadline = time.time() + timeout

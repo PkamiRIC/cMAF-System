@@ -8,6 +8,7 @@ import EventLog from "./event-log"
 
 export default function Dashboard() {
   const [targetVolumeMl, setTargetVolumeMl] = useState(50)
+  const [sequenceTempTargetDraft, setSequenceTempTargetDraft] = useState("")
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/30 p-6 space-y-6">
@@ -15,10 +16,17 @@ export default function Dashboard() {
 
       <div className="space-y-6 animate-in fade-in duration-700">
         {/* Row 1: Axis Controls and Syringe */}
-        <ControlPanel targetVolumeMl={targetVolumeMl} setTargetVolumeMl={setTargetVolumeMl} />
+        <ControlPanel
+          targetVolumeMl={targetVolumeMl}
+          setTargetVolumeMl={setTargetVolumeMl}
+          setSequenceTempTargetDraft={setSequenceTempTargetDraft}
+        />
 
         {/* Row 2: Sequences and System Controls */}
-        <StatusDisplay targetVolumeMl={targetVolumeMl} />
+        <StatusDisplay
+          targetVolumeMl={targetVolumeMl}
+          sequenceTempTargetDraft={sequenceTempTargetDraft}
+        />
 
         {/* Row 3: Event Log */}
         <EventLog />

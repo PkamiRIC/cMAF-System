@@ -59,9 +59,13 @@ async function fetchStatus(): Promise<DeviceStatus> {
 
 type StatusDisplayProps = {
   targetVolumeMl: number
+  sequenceTempTargetDraft: string
 }
 
-export default function StatusDisplay({ targetVolumeMl }: StatusDisplayProps) {
+export default function StatusDisplay({
+  targetVolumeMl,
+  sequenceTempTargetDraft,
+}: StatusDisplayProps) {
   const [status, setStatus] = useState<DeviceStatus>({})
   const [error, setError] = useState<string | null>(null)
   const activeSequence = useMemo<"seq1" | "seq2" | "clean" | null>(() => {
@@ -111,7 +115,13 @@ export default function StatusDisplay({ targetVolumeMl }: StatusDisplayProps) {
   const handleStartSequence = async (seq: "seq1" | "seq2" | "clean") => {
     const name = seq === "seq2" ? "sequence2" : seq === "clean" ? "cleaning" : "sequence1"
     try {
-      const payload = seq === "seq1" ? { target_volume_ml: targetVolumeMl } : undefined
+      const trimmed = sequenceTempTargetDraft.trim()
+      const parsed = trimmed.length > 0 ? Number.parseFloat(trimmed) : NaN
+      const tempTargetPayload = Number.isFinite(parsed) ? { temp_target_c: parsed } : {}
+      const payload =
+        seq === "seq1"
+          ? { target_volume_ml: targetVolumeMl, ...tempTargetPayload }
+          : { ...tempTargetPayload }
       await post(`/command/start/${name}`, payload)
     } catch (err: any) {
       setError(err?.message || "Start failed")

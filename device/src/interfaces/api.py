@@ -51,6 +51,7 @@ class TempTarget(BaseModel):
 
 class StartSequence(BaseModel):
     target_volume_ml: Optional[float] = None
+    temp_target_c: Optional[float] = None
 
 
 def create_app(config: DeviceConfig, config_path: str):
@@ -74,7 +75,12 @@ def create_app(config: DeviceConfig, config_path: str):
     def start(sequence_name: str, payload: Optional[StartSequence] = None):
         try:
             target_ml = payload.target_volume_ml if payload else None
-            controller.start_sequence(sequence_name, target_volume_ml=target_ml)
+            temp_target_c = payload.temp_target_c if payload else None
+            controller.start_sequence(
+                sequence_name,
+                target_volume_ml=target_ml,
+                temp_target_c=temp_target_c,
+            )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True}
