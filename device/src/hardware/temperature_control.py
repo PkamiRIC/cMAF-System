@@ -122,7 +122,14 @@ class _TecDriver:
                     parameter_id=1200, address=a, parameter_instance=self.channel
                 )
             )
-            return bool(int(v))
+            # MeCom 1200 semantics:
+            # 0 = regulation not active, 1 = not stable, 2 = stable
+            iv = int(v)
+            if iv == 2:
+                return True
+            if iv in (0, 1):
+                return False
+            return None
         except Exception:
             return None
 
