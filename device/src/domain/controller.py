@@ -897,10 +897,12 @@ class DeviceController:
         return float(self.flow_sensor.read().get("total_ml", 0.0))
 
     def _temp_enable(self) -> None:
+        with self._state_lock:
+            current_target_c = float(self.state.temp_target_c)
         target_c = (
             float(self._sequence_temp_target_c)
             if self._sequence_temp_target_c is not None
-            else float(self.config.temperature.tec_default_target_c)
+            else current_target_c
         )
         try:
             self.temperature.set_target_c(target_c)
