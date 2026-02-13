@@ -1023,7 +1023,16 @@ class DeviceController:
             except Exception:
                 pass
             with self._motion_lock:
-                self.syringe.home(stop_flag=self._stop_event.is_set)
+                for attempt in range(1, 3):
+                    self.syringe.home(stop_flag=self._stop_event.is_set)
+                    ok = self.syringe.wait_until_at_target(
+                        timeout=120, stop_flag=self._stop_event.is_set
+                    )
+                    if ok:
+                        break
+                    if attempt >= 2:
+                        raise RuntimeError("Syringe home timed out during initialize")
+                    time.sleep(0.2)
             self._append_log("Syringe homed")
             with self._state_lock:
                 self.state.syringe_homed = True
