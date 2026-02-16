@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 import threading
+import time
 
 try:
     import RPi.GPIO as GPIO  # type: ignore
@@ -187,12 +188,15 @@ class TemperatureController:
         value = float(target_c)
         with self._lock:
             self.state.target_c = value
+            enabled = bool(self.state.enabled)
         # Requested behavior:
         # - Apply should power the TEC controller so communication is available.
         # - Apply should send the target immediately.
         # - Heating must remain OFF until set_enabled(True) is called.
-        if plc:
+        if plc and not enabled:
             safe_plc_call("digital_write", plc.digital_write, self.config.command_pin, True)
+            # Give TEC comms a brief warm-up after controller power is applied.
+            time.sleep(0.25)
         if self._tec is None:
             msg = "TEC set target failed: controller unavailable"
             with self._lock:
