@@ -125,6 +125,11 @@ class TemperatureConfig:
 
 
 @dataclass
+class AuthConfig:
+    advanced_controls_password: str = "admin123"
+
+
+@dataclass
 class DeviceConfig:
     device_id: str = "device2"
     network: NetworkConfig = field(default_factory=NetworkConfig)
@@ -141,6 +146,7 @@ class DeviceConfig:
     sequence1: Sequence1Config = field(default_factory=Sequence1Config)
     sequence2: Sequence2Config = field(default_factory=Sequence2Config)
     temperature: TemperatureConfig = field(default_factory=TemperatureConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
 
 
 def _load_yaml(path: str) -> Dict[str, Any]:
@@ -170,4 +176,5 @@ def load_config(path: str) -> DeviceConfig:
         sequence1=Sequence1Config(**data.get("sequence1", {})),
         sequence2=Sequence2Config(**data.get("sequence2", {})),
         temperature=TemperatureConfig(**data.get("temperature", {})),
+        auth=AuthConfig(**data.get("auth", {})),
     )

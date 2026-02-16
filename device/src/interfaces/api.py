@@ -1,5 +1,6 @@
 import asyncio
 import json
+import secrets
 from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -54,6 +55,10 @@ class StartSequence(BaseModel):
     temp_target_c: Optional[float] = None
 
 
+class AdvancedUnlockPayload(BaseModel):
+    password: str = Field(..., min_length=1)
+
+
 def create_app(config: DeviceConfig, config_path: str):
     controller = DeviceController(config)
 
@@ -70,6 +75,15 @@ def create_app(config: DeviceConfig, config_path: str):
     @app.get("/status")
     def status():
         return controller.get_status()
+
+    @app.post("/auth/advanced/unlock")
+    def auth_advanced_unlock(payload: AdvancedUnlockPayload):
+        expected = config.auth.advanced_controls_password
+        if not expected:
+            raise HTTPException(status_code=503, detail="Advanced controls password not configured")
+        if not secrets.compare_digest(payload.password, expected):
+            raise HTTPException(status_code=401, detail="Invalid password")
+        return {"ok": True}
 
     @app.post("/command/start/{sequence_name}")
     def start(sequence_name: str, payload: Optional[StartSequence] = None):

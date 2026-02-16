@@ -216,6 +216,7 @@ ls -l /dev/ttySCC1
 Edit `device2.yaml` and set:
 - `device_id: "device2"`
 - `network.api_port: 8002`
+- `auth.advanced_controls_password: "<choose-a-strong-password>"`
 - `relay.address: 1`
 - `vertical_axis` min/max to 0..25
 - `flow_sensor.port: /dev/ttySCC1`

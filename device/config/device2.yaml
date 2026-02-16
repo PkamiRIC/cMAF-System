@@ -1,6 +1,8 @@
 device_id: "device2"
 network:
   api_port: 8002
+auth:
+  advanced_controls_password: "admin123"
 relay:
   port: "/dev/ttySC3"
   address: 1
