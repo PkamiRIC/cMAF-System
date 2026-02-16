@@ -188,22 +188,20 @@ class TemperatureController:
         with self._lock:
             self.state.target_c = value
         # Requested behavior:
-        # - Target should always be accepted in software state.
-        # - If Peltier loop is OFF, defer TEC write until set_enabled(True).
-        with self._lock:
-            enabled = bool(self.state.enabled)
-        if not enabled:
-            with self._lock:
-                # Clear stale transport errors when user updates a local target while OFF.
-                self.state.error = None
-            return
+        # - Apply should power the TEC controller so communication is available.
+        # - Apply should send the target immediately.
+        # - Heating must remain OFF until set_enabled(True) is called.
+        if plc:
+            safe_plc_call("digital_write", plc.digital_write, self.config.command_pin, True)
         if self._tec is None:
-            msg = "TEC set target failed: controller unavailable while Peltier is ON"
+            msg = "TEC set target failed: controller unavailable"
             with self._lock:
                 self.state.error = msg
             raise RuntimeError(msg)
         try:
             self._tec.set_target_c(value)
+            # Keep heating loop disabled after target apply.
+            self._tec.set_enabled(False)
             with self._lock:
                 self.state.error = None
         except Exception as exc:
