@@ -91,8 +91,10 @@ export default function Dashboard() {
               targetVolumeMl={targetVolumeMl}
               sequenceTempTargetDraft={sequenceTempTargetDraft}
             />
-            <LiveIndicators />
-            <EventLog />
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_460px] gap-6 items-start">
+              <LiveIndicators />
+              <EventLog />
+            </div>
           </div>
         )}
 

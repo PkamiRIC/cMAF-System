@@ -44,38 +44,59 @@ export default function LiveIndicators() {
     }
   }, [])
 
-  const indicatorRows = [
-    { label: "Controller State", value: status.state || "unknown" },
-    { label: "Current Sequence", value: status.current_sequence || "None" },
-    { label: "Sequence Step", value: status.sequence_step || "N/A" },
-    { label: "X Axis Homed", value: boolLabel(status.x_homed) },
-    { label: "Z Axis Homed", value: boolLabel(status.z_homed) },
-    { label: "Syringe Homed", value: boolLabel(status.syringe_homed) },
-    { label: "Syringe Busy", value: boolLabel(status.syringe_busy) },
+  const groupedIndicators = [
     {
-      label: "Syringe Volume",
-      value: typeof status.syringe_volume_ml === "number" ? `${status.syringe_volume_ml.toFixed(2)} mL` : "N/A",
+      title: "Sequence",
+      items: [
+        { label: "Controller", value: status.state || "unknown" },
+        { label: "Current", value: status.current_sequence || "None" },
+        { label: "Step", value: status.sequence_step || "N/A" },
+      ],
     },
     {
-      label: "Flow Rate",
-      value: typeof status.flow_ml_min === "number" ? `${status.flow_ml_min.toFixed(2)} mL/min` : "N/A",
+      title: "Axes & Syringe",
+      items: [
+        { label: "X Homed", value: boolLabel(status.x_homed) },
+        { label: "Z Homed", value: boolLabel(status.z_homed) },
+        { label: "Syringe Homed", value: boolLabel(status.syringe_homed) },
+        { label: "Syringe Busy", value: boolLabel(status.syringe_busy) },
+        {
+          label: "Syringe Volume",
+          value:
+            typeof status.syringe_volume_ml === "number" ? `${status.syringe_volume_ml.toFixed(2)} mL` : "N/A",
+        },
+      ],
     },
-    { label: "Flow Reader", value: boolLabel(status.flow_running) },
     {
-      label: "Total Volume",
-      value: typeof status.total_ml === "number" ? `${status.total_ml.toFixed(1)} mL` : "N/A",
+      title: "Flow",
+      items: [
+        {
+          label: "Rate",
+          value: typeof status.flow_ml_min === "number" ? `${status.flow_ml_min.toFixed(2)} mL/min` : "N/A",
+        },
+        { label: "Reader", value: boolLabel(status.flow_running) },
+        {
+          label: "Total",
+          value: typeof status.total_ml === "number" ? `${status.total_ml.toFixed(1)} mL` : "N/A",
+        },
+      ],
     },
     {
-      label: "Temperature Current",
-      value: typeof status.temp_current_c === "number" ? `${status.temp_current_c.toFixed(2)} C` : "N/A",
+      title: "Temperature & Control",
+      items: [
+        {
+          label: "Current",
+          value: typeof status.temp_current_c === "number" ? `${status.temp_current_c.toFixed(2)} C` : "N/A",
+        },
+        {
+          label: "Target",
+          value: typeof status.temp_target_c === "number" ? `${status.temp_target_c.toFixed(1)} C` : "N/A",
+        },
+        { label: "Ready", value: boolLabel(status.temp_ready) },
+        { label: "Peristaltic", value: boolLabel(status.peristaltic_enabled) },
+        { label: "PID", value: boolLabel(status.pid_enabled) },
+      ],
     },
-    {
-      label: "Temperature Target",
-      value: typeof status.temp_target_c === "number" ? `${status.temp_target_c.toFixed(1)} C` : "N/A",
-    },
-    { label: "Temperature Ready", value: boolLabel(status.temp_ready) },
-    { label: "Peristaltic Pump", value: boolLabel(status.peristaltic_enabled) },
-    { label: "PID Enabled", value: boolLabel(status.pid_enabled) },
   ]
 
   return (
@@ -85,10 +106,17 @@ export default function LiveIndicators() {
         <span className="text-xs text-muted-foreground">1s refresh</span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {indicatorRows.map((item) => (
-          <div key={item.label} className="p-3 rounded-lg border border-border bg-secondary/30">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">{item.label}</p>
-            <p className="text-sm font-semibold text-foreground mt-1">{item.value}</p>
+        {groupedIndicators.map((group) => (
+          <div key={group.title} className="p-3 rounded-lg border border-border bg-secondary/30 space-y-2">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">{group.title}</p>
+            <div className="space-y-1.5">
+              {group.items.map((item) => (
+                <div key={`${group.title}-${item.label}`} className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-muted-foreground">{item.label}</span>
+                  <span className="text-xs font-semibold text-foreground text-right">{item.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </div>
