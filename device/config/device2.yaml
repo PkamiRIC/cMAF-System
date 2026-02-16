@@ -2,7 +2,7 @@ device_id: "device2"
 network:
   api_port: 8002
 auth:
-  advanced_controls_password: "admin123"
+  advanced_controls_password: "raspberry"
 relay:
   port: "/dev/ttySC3"
   address: 1
