@@ -373,3 +373,92 @@ curl -X POST http://127.0.0.1:8002/peristaltic/direction \
 curl -X POST http://127.0.0.1:8002/peristaltic/direction \
   -H "Content-Type: application/json" -d '{"forward": false}'
 ```
+
+### Troubleshooting: DIR Button Changes in UI but LAM DO1 Does Not Toggle
+
+If you press `Dir: CW/CCW` in the UI and the backend state changes, but LAM digital output 1 does not change, use this checklist.
+
+#### Symptoms
+- UI button text changes between `CW` and `CCW`.
+- `/status` shows `peristaltic_direction_cw` changing.
+- LAM DO1 does not change physically.
+
+#### Root cause seen in this project
+In `device/src/hardware/peristaltic_pump.py`, direction write used an invalid lock path based on `SyringePump` internals. The exception was caught silently in `set_direction`, so UI state updated but the RS485 direction write never reached the LAM driver.
+
+#### Required code pattern (fix)
+Use shared serial lock helper for the LAM port:
+
+```python
+from hardware.serial_port_lock import get_port_lock
+
+with get_port_lock(self.config.dir_driver_port):
+    with self._open_serial(timeout=0.5) as ser:
+        ser.reset_input_buffer()
+        ser.reset_output_buffer()
+        ser.write(frame)
+        ser.read(8)
+```
+
+#### Deploy fix correctly (important: PC vs Pi)
+
+Do not run Windows paths on the Pi shell.
+
+1. On PC (commit + push):
+```powershell
+cd "C:\Users\p.kamintzis\OneDrive - Cy.R.I.C. Cyprus Research and Innovation Center Ltd\Work\WARP\cMAF-System"
+git add device/src/hardware/peristaltic_pump.py
+git commit -m "Fix peristaltic LAM direction lock to use shared serial port lock"
+git push origin cleanup-repo-docs
+```
+
+If you get `.git/index.lock` on PC:
+```powershell
+Remove-Item -Force .git\index.lock -ErrorAction SilentlyContinue
+```
+Then re-run add/commit/push.
+
+2. On Pi (pull + restart):
+```bash
+ssh pi@WARP2PLC
+cd ~/cMAF-System
+git checkout cleanup-repo-docs
+git pull origin cleanup-repo-docs
+sudo systemctl restart device2.service
+sudo systemctl restart warp-ui.service
+sudo systemctl status device2.service --no-pager -l
+sudo systemctl status warp-ui.service --no-pager -l
+```
+
+#### Verify responsiveness
+
+1. Check backend + UI health:
+```bash
+curl -sS http://127.0.0.1:8002/status | head
+curl -I http://127.0.0.1:3002
+```
+
+2. Toggle direction directly:
+```bash
+curl -sS -X POST http://127.0.0.1:8002/peristaltic/direction -H "Content-Type: application/json" -d '{"forward":true}'
+curl -sS -X POST http://127.0.0.1:8002/peristaltic/direction -H "Content-Type: application/json" -d '{"forward":false}'
+```
+
+3. Watch live status while pressing UI button:
+```bash
+watch -n 0.3 'curl -sS http://127.0.0.1:8002/status | jq "{peristaltic_enabled, peristaltic_direction_cw, state, last_error}"'
+```
+
+If `jq` is unavailable:
+```bash
+watch -n 0.3 "curl -sS http://127.0.0.1:8002/status | grep -o '\"peristaltic_direction_cw\":[^,]*\\|\"peristaltic_enabled\":[^,]*\\|\"state\":\"[^\"]*\"\\|\"last_error\":[^,}]*'"
+```
+
+#### Rollback on Pi (go back one commit)
+```bash
+cd ~/cMAF-System
+git checkout cleanup-repo-docs
+git reset --hard HEAD~1
+sudo systemctl restart device2.service
+sudo systemctl restart warp-ui.service
+```
