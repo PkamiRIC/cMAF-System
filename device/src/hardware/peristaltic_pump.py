@@ -22,7 +22,12 @@ class PeristalticPump:
         self.state = PeristalticState()
         ensure_plc_init()
         if plc:
-            for pin in (config.enable_pin, config.dir_reverse_pin, config.speed_pin):
+            for pin in (
+                config.enable_pin,
+                config.dir_forward_pin,
+                config.dir_reverse_pin,
+                config.speed_pin,
+            ):
                 safe_plc_call("pin_mode", plc.pin_mode, pin, plc.OUTPUT)
                 safe_plc_call("digital_write", plc.digital_write, pin, False)
 
@@ -95,8 +100,9 @@ class PeristalticPump:
 
     def set_direction(self, forward: bool) -> None:
         if plc:
-            # Q0.2 follows direction state: LOW for CCW, HIGH for CW.
-            safe_plc_call("digital_write", plc.digital_write, self.config.dir_reverse_pin, forward)
+            # Legacy wiring drives complementary direction pins.
+            safe_plc_call("digital_write", plc.digital_write, self.config.dir_forward_pin, forward)
+            safe_plc_call("digital_write", plc.digital_write, self.config.dir_reverse_pin, not forward)
         try:
             # Forward (CW) => DO1 OFF (0x0081). Reverse (CCW) => DO1 ON (0x0001).
             self._send_dir_command(0x0081 if forward else 0x0001)
